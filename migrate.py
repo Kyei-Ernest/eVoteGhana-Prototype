@@ -4,6 +4,7 @@ import bcrypt
 
 
 def migrate():
+    """Migrate legacy schema (presidents, members_of_parliament tables) to the new unified schema."""
     dbname = input(f"Database to migrate [{Config.DB_NAME_MAIN}]: ") or Config.DB_NAME_MAIN
 
     try:
@@ -52,6 +53,7 @@ def migrate():
             pres_count = 0
             mp_count = 0
             for party_col in party_columns:
+                # Each column in members_of_parliament (besides id/constituency) represents a party
                 party_name = party_col.replace('_', ' ').title().strip()
                 if party_name.lower() == 'none':
                     continue
@@ -60,6 +62,7 @@ def migrate():
                 party_row = cursor.fetchone()
                 party_id = party_row[0] if party_row else None
 
+                # Migrate presidential candidates from the presidents table
                 cursor.execute("SELECT presidential_candidate_name FROM presidents WHERE political_party = %s",
                                (party_name,))
                 pres = cursor.fetchone()
@@ -71,6 +74,7 @@ def migrate():
                                    (pres[0], party_id, eid))
                     pres_count += 1
 
+                # Migrate MP candidates from members_of_parliament column values
                 cursor.execute("SELECT * FROM members_of_parliament")
                 mop_rows = cursor.fetchall()
                 col_index = party_columns.index(party_col) + 2

@@ -2,6 +2,8 @@ import getpass
 import mysql.connector
 from config import Config
 
+# SQL statements for creating all database tables
+
 CREATE_DATABASE = """
 CREATE DATABASE IF NOT EXISTS {dbname} CHARACTER SET utf8 COLLATE utf8_general_ci;
 """
@@ -142,11 +144,13 @@ INSERT IGNORE INTO regions (id, name) VALUES
 
 
 def table_exists(cursor, table_name):
+    """Check whether a table already exists in the database."""
     cursor.execute("SHOW TABLES LIKE %s", (table_name,))
     return cursor.fetchone() is not None
 
 
 def setup_database():
+    """Create the database, all tables, seed regions, and prompt for the initial admin account."""
     dbname = input(f"Enter database name [{Config.DB_NAME_MAIN}]: ") or Config.DB_NAME_MAIN
 
     try:

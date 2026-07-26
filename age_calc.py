@@ -3,11 +3,8 @@ from datetime import datetime
 
 
 def age(then):
+    """Calculate a person's age in whole years from their date of birth to the current date."""
     now = datetime.now()
     delta = now - then
     ages = delta.days / 365
     return math.floor(ages)
-
-
-'''then is the date of birth of the individual
-and now refers to the current date'''

@@ -6,6 +6,7 @@ VALID_COLUMNS_CACHE = {}
 
 
 def _get_valid_columns(table):
+    """Return the set of valid column names for a given table, caching the result."""
     if table not in VALID_COLUMNS_CACHE:
         try:
             with DatabaseManager() as db:
@@ -17,12 +18,14 @@ def _get_valid_columns(table):
 
 
 def _validate_table(table):
+    """Raise ValueError if the table name is not in the allowed set."""
     if table not in VALID_TABLES:
         raise ValueError(f"Invalid table: {table}")
     return table
 
 
 def _validate_column(table, column):
+    """Raise ValueError if the column does not exist in the specified table."""
     valid = _get_valid_columns(table)
     if column not in valid:
         raise ValueError(f"Invalid column '{column}' for table '{table}'")
@@ -30,6 +33,7 @@ def _validate_column(table, column):
 
 
 def check_value_exists(table, column, user_input, db_name=None):
+    """Return True if a row with the given value exists in the specified table column."""
     try:
         _validate_table(table)
         _validate_column(table, column)
@@ -43,6 +47,7 @@ def check_value_exists(table, column, user_input, db_name=None):
 
 
 def check_column_exists(table_name, column_name, db_name=None):
+    """Return True if the specified column exists in the given table."""
     try:
         _validate_table(table_name)
         with DatabaseManager(db_name) as db:

@@ -71,12 +71,13 @@ TRANSLATIONS = {
         'voter_reg': '2. Votɔ Nyaɖeɖefe',
         'back': '3. Gbɔ yi Main Menu',
         'voting_section': '--- Vot Ɖoɖo Fe ---',
-        'results_section': '--- Abatoɔwo Ƒe Seɖoƒo ---',
+        'results_section': '--- Abatoɔwo Ƒe Seɖoƒe ---',
     },
 }
 
 
 def _(key, **kwargs):
+    """Translate a key into the configured language, falling back to English, with optional formatting."""
     lang = LANGUAGE
     if lang not in TRANSLATIONS:
         lang = 'en'

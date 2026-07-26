@@ -2,6 +2,7 @@ from database import DatabaseManager
 
 
 def log_action(action, table_name, record_id, details, actor="system"):
+    """Insert a new entry into the audit_log table."""
     try:
         with DatabaseManager() as db:
             sql = """INSERT INTO audit_log (action, table_name, record_id, details, actor)
@@ -12,6 +13,7 @@ def log_action(action, table_name, record_id, details, actor="system"):
 
 
 def get_audit_trail(table_name=None, record_id=None, limit=100):
+    """Retrieve audit log entries, optionally filtered by table and record ID."""
     try:
         with DatabaseManager() as db:
             if table_name and record_id:

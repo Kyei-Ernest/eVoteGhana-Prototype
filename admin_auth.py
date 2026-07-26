@@ -18,14 +18,26 @@ SECRET_ENV_VARS = [
 
 
 def validate_config():
+    """Check that all required environment variables are set and valid; exit with instructions if not."""
     missing = []
     for var, desc in REQUIRED_ENV_VARS:
         if not os.getenv(var):
             missing.append(f"  {var} ({desc})")
     if missing:
-        print("ERROR: Missing required environment variables in .env:")
+        print("\n" + "=" * 60)
+        print("  eVoteGhana - First Time Setup Required")
+        print("=" * 60)
+        print("\nMissing environment variables:")
         print("\n".join(missing))
-        print("\nPlease check your .env file.")
+        print("\nTo get started:")
+        print("  1. Copy .env.example to .env:")
+        print("     cp .env.example .env")
+        print("  2. Edit .env with your MySQL credentials")
+        print("  3. Run the schema setup:")
+        print("     python3 schema.py")
+        print("  4. Start the application:")
+        print("     python3 main.py")
+        print("\nSee README.md for detailed instructions.")
         sys.exit(1)
 
     port = os.getenv('DB_PORT', '3306')
@@ -48,6 +60,7 @@ def validate_config():
 
 
 def require_admin():
+    """Authenticate the user as an admin if not already logged in; return True on success."""
     if not AUTH_SESSION['logged_in']:
         print("\nAdmin authentication required.")
         username = input("Admin username: ")
@@ -74,6 +87,7 @@ def require_admin():
 
 
 def logout_admin():
+    """Clear the current admin session."""
     AUTH_SESSION['logged_in'] = False
     AUTH_SESSION['username'] = None
     AUTH_SESSION['role'] = None
@@ -81,4 +95,5 @@ def logout_admin():
 
 
 def is_admin_logged_in():
+    """Return whether an admin is currently authenticated."""
     return AUTH_SESSION['logged_in']

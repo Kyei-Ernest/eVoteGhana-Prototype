@@ -9,12 +9,14 @@ from rate_limiter import voter_auth_limiter
 
 
 def verify_password(stored_password, provided_password):
+    """Compare a provided password against a stored bcrypt hash."""
     if isinstance(stored_password, str):
         stored_password = stored_password.encode('utf-8')
     return bcrypt.checkpw(provided_password.encode('utf-8'), stored_password)
 
 
 def vote_mp():
+    """Authenticate voter, display MP candidates, record MP vote, then proceed to presidential vote."""
     voters_id = input("Enter voter ID: ")
 
     if not voter_auth_limiter.is_allowed(voters_id):
@@ -94,6 +96,7 @@ def vote_mp():
 
 
 def vote_president(voters_id):
+    """Record a presidential vote for the already authenticated voter."""
     try:
         pres_election_id = bc.get_presidential_election_id()
         if not pres_election_id:
@@ -141,11 +144,12 @@ def vote_president(voters_id):
 
 
 def display_poll():
+    """Prompt the voter for confirmation before starting the voting process."""
     while True:
         try:
             voter_entry = input("""Are you sure you want to vote now?
-    1. Yes
-    2. No\n""")
+1. Yes
+2. No\n""")
             if voter_entry == "1":
                 vote_mp()
                 break

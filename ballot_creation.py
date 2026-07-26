@@ -2,6 +2,7 @@ from database import DatabaseManager
 
 
 def get_presidential_election_id():
+    """Return the ID of the active presidential election in voting phase, or None."""
     try:
         with DatabaseManager() as db:
             db.execute_query("""SELECT id FROM elections
@@ -15,6 +16,7 @@ def get_presidential_election_id():
 
 
 def get_mp_election_id():
+    """Return the ID of the active MP election in voting phase, or None."""
     try:
         with DatabaseManager() as db:
             db.execute_query("""SELECT id FROM elections
@@ -28,6 +30,7 @@ def get_mp_election_id():
 
 
 def display_presidents(election_id=None):
+    """Display presidential candidates and return a mapping of candidate numbers to names."""
     try:
         if election_id is None:
             election_id = get_presidential_election_id()
@@ -60,6 +63,7 @@ def display_presidents(election_id=None):
 
 
 def display_mp(voter_id, election_id=None):
+    """Display MP candidates for the voter's constituency and return a mapping of numbers to names."""
     try:
         if election_id is None:
             election_id = get_mp_election_id()

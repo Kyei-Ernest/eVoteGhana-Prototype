@@ -80,13 +80,20 @@ docker attach evote_app
 ### Option B: Local
 
 ```bash
+# 1. Set up Python environment
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
-# Edit .env with your MySQL credentials, then:
-python3 schema.py     # Create database + tables
-python3 main.py       # Run the system
+# 2. Configure database credentials
+cp .env.example .env
+# Edit .env with your MySQL credentials (DB_HOST, DB_USER, DB_PASSWORD)
+
+# 3. Create database and tables (will prompt for admin account on first run)
+python3 schema.py
+
+# 4. Start the system
+python3 main.py
 ```
 
 ## Setup Order

@@ -1,10 +1,11 @@
 import os
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
 load_dotenv()
 
+
 class Config:
+    """Application configuration loaded from environment variables with sensible defaults."""
     DB_HOST = os.getenv('DB_HOST', '127.0.0.1')
     DB_USER = os.getenv('DB_USER', 'root')
     DB_PASSWORD = os.getenv('DB_PASSWORD', 'admin123')
@@ -14,7 +15,7 @@ class Config:
 
     @staticmethod
     def get_db_config(database_name=None):
-        """Returns a dictionary for mysql.connector"""
+        """Return a connection parameter dictionary for mysql.connector."""
         return {
             'host': Config.DB_HOST,
             'user': Config.DB_USER,

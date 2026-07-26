@@ -4,6 +4,7 @@ from audit_log import log_action
 
 
 def collate_presidential_results(election_id):
+    """Aggregate presidential vote counts per candidate for a given election."""
     try:
         with DatabaseManager() as db:
             db.execute_query("""SELECT COUNT(*) FROM votes WHERE election_id = %s""", (election_id,))
@@ -25,6 +26,7 @@ def collate_presidential_results(election_id):
 
 
 def collate_mp_results(election_id):
+    """Aggregate MP vote counts grouped by constituency for a given election."""
     try:
         with DatabaseManager() as db:
             db.execute_query("""SELECT DISTINCT c.constituency_id, con.name as const_name, r.name as region_name
@@ -58,6 +60,7 @@ def collate_mp_results(election_id):
 
 
 def collate_regional_results(election_id):
+    """Aggregate total MP votes cast per region."""
     try:
         with DatabaseManager() as db:
             db.execute_query("""SELECT r.id, r.name, COUNT(*) as total
@@ -75,6 +78,7 @@ def collate_regional_results(election_id):
 
 
 def format_form_1a(election_id, results):
+    """Print presidential results in EC Ghana Form 1A format and determine if a runoff is needed."""
     print("\n" + "=" * 60)
     print("            EC GHANA FORM 1A - PRESIDENTIAL RESULTS")
     print("=" * 60)
@@ -98,6 +102,7 @@ def format_form_1a(election_id, results):
 
 
 def format_form_1c(constituency_name, results, region_name=""):
+    """Print MP results for a single constituency in EC Ghana Form 1C format."""
     print("\n" + "-" * 60)
     print(f"     EC GHANA FORM 1C - PARLIAMENTARY: {constituency_name}")
     if region_name:
@@ -116,6 +121,7 @@ def format_form_1c(constituency_name, results, region_name=""):
 
 
 def display_results():
+    """Display formatted election results for all completed elections (president and MP)."""
     try:
         with DatabaseManager() as db:
             db.execute_query("""SELECT id, title, position, phase

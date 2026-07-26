@@ -7,6 +7,7 @@ from admin_auth import validate_config, require_admin, logout_admin, is_admin_lo
 
 
 def main_menu():
+    """Display the main navigation menu and route user choices to the appropriate module."""
     validate_config()
 
     while True:
@@ -55,6 +56,7 @@ def main_menu():
 
 
 def registration_menu():
+    """Show the registration submenu for admin setup or voter registration."""
     while True:
         print(f"\n{_('reg_menu')}")
         print(_('admin_setup'))
@@ -74,16 +76,19 @@ def registration_menu():
 
 
 def voting_menu():
+    """Launch the voting interface."""
     print(f"\n{_('voting_section')}")
     voting.display_poll()
 
 
 def results_menu():
+    """Launch the results display interface."""
     print(f"\n{_('results_section')}")
     results_processing.display_results()
 
 
 def verify_vote_by_ballot():
+    """Look up and display vote details by a ballot paper ID."""
     ballot_id = input("Enter Ballot Paper ID (e.g., BALLOT-XXXX): ").strip()
     if not ballot_id:
         print("No ID entered.")
@@ -117,6 +122,7 @@ def verify_vote_by_ballot():
 
 
 def view_audit_trail():
+    """Display the last 50 entries from the audit log."""
     from audit_log import get_audit_trail
     logs = get_audit_trail(limit=50)
     if not logs:
@@ -131,6 +137,7 @@ def view_audit_trail():
 
 
 def backup_restore_menu():
+    """Show a submenu for database backup and restore operations."""
     from backup_restore import backup_database, restore_database
     print("\n1. Backup database")
     print("2. Restore database")

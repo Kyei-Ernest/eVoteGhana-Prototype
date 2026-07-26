@@ -6,6 +6,7 @@ PHASES = ['nomination', 'campaigning', 'voting', 'results', 'closed']
 
 
 def get_current_phase(election_id):
+    """Return the current phase of an election, auto-transitioning if the end date has passed."""
     try:
         with DatabaseManager() as db:
             db.execute_query("SELECT phase, start_date, end_date FROM elections WHERE id = %s", (election_id,))
@@ -16,6 +17,7 @@ def get_current_phase(election_id):
             today = date.today()
             if start_date and today < start_date:
                 return 'scheduled'
+            # Auto-transition to results if voting period has ended
             if end_date and today > end_date and phase == 'voting':
                 auto_transition(election_id, 'results')
                 return 'results'
@@ -26,6 +28,7 @@ def get_current_phase(election_id):
 
 
 def transition_phase(election_id, new_phase):
+    """Transition an election to a new phase, enforcing forward-only movement."""
     if new_phase not in PHASES:
         print(f"Invalid phase: {new_phase}")
         return False
@@ -37,6 +40,7 @@ def transition_phase(election_id, new_phase):
                 return False
             current_idx = PHASES.index(current) if current in PHASES else -1
             new_idx = PHASES.index(new_phase)
+            # Allow backward transition only when moving to 'closed'
             if new_idx <= current_idx and new_phase != 'closed':
                 print(f"Cannot transition from {current} to {new_phase}.")
                 return False
@@ -51,6 +55,7 @@ def transition_phase(election_id, new_phase):
 
 
 def auto_transition(election_id, new_phase):
+    """Silently update an election's phase without audit logging."""
     try:
         with DatabaseManager() as db:
             db.execute_query("UPDATE elections SET phase = %s WHERE id = %s", (new_phase, election_id))
@@ -59,6 +64,7 @@ def auto_transition(election_id, new_phase):
 
 
 def require_phase(election_id, required_phase):
+    """Check that an election is in the required phase, printing a message if not."""
     current = get_current_phase(election_id)
     if current != required_phase:
         print(f"This action requires the '{required_phase}' phase. Current phase: {current}")
@@ -67,6 +73,7 @@ def require_phase(election_id, required_phase):
 
 
 def get_active_elections():
+    """Return all elections that have not been closed."""
     try:
         with DatabaseManager() as db:
             db.execute_query("SELECT id, title, position, phase FROM elections WHERE phase != 'closed'")
@@ -77,6 +84,7 @@ def get_active_elections():
 
 
 def check_50_percent_plus_one(total_votes, candidate_votes):
+    """Return True if candidate_votes exceeds half of total_votes."""
     if total_votes == 0:
         return False
     threshold = total_votes / 2
@@ -84,6 +92,7 @@ def check_50_percent_plus_one(total_votes, candidate_votes):
 
 
 def needs_runoff(election_id):
+    """Determine whether a presidential election requires a runoff (no candidate achieved 50%+1)."""
     try:
         with DatabaseManager() as db:
             db.execute_query("""SELECT COUNT(*) FROM votes v

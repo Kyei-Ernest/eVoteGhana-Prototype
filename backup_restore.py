@@ -9,10 +9,12 @@ BACKUP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'backups')
 
 
 def _ensure_backup_dir():
+    """Create the backups directory if it does not exist."""
     os.makedirs(BACKUP_DIR, exist_ok=True)
 
 
 def backup_database():
+    """Dump the main database to a timestamped SQL file using mysqldump."""
     _ensure_backup_dir()
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     filename = f"evote_backup_{timestamp}.sql"
@@ -43,6 +45,7 @@ def backup_database():
 
 
 def restore_database():
+    """Restore the main database from a previously created backup SQL file using mysql."""
     _ensure_backup_dir()
     backups = sorted([f for f in os.listdir(BACKUP_DIR) if f.endswith('.sql')], reverse=True)
 

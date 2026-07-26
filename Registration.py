@@ -11,6 +11,7 @@ from audit_log import log_action
 
 
 class RegisterVoter:
+    """Handle voter registration, validation, and database insertion."""
     def __init__(self, voter_id, name, contact, email, date_of_birth, personal_id, occupation,
                  constituency_id, polling_station_id, password, conf_pass):
         self.id = voter_id
@@ -27,6 +28,7 @@ class RegisterVoter:
         self.legal_age = 0
 
     def calculate_age(self):
+        """Parse date of birth and compute legal age."""
         try:
             day, month, year = map(int, self.date_of_birth.split("/"))
             then = datetime(year=year, month=month, day=day)
@@ -37,6 +39,7 @@ class RegisterVoter:
             return -1
 
     def full_info(self):
+        """Insert voter record and hashed password into the database."""
         try:
             hashed_password = RegisterVoter.create_hashed_password(self.password)
             python_date = datetime.strptime(self.date_of_birth, '%d/%m/%Y')
@@ -66,10 +69,12 @@ class RegisterVoter:
 
     @staticmethod
     def create_hashed_password(password):
+        """Generate a bcrypt hash for the given password."""
         salt = bcrypt.gensalt()
         return bcrypt.hashpw(password.encode('utf-8'), salt)
 
     def verification(self):
+        """Validate all voter fields and retry on failure, then register if valid."""
         try:
             self.calculate_age()
 
@@ -79,6 +84,7 @@ class RegisterVoter:
 
             if id_exists:
                 print("Sorry, this ID already exists for another voter")
+                # Generate a new random ID and retry verification
                 id_list = random.choices(string.ascii_uppercase + string.digits, k=8)
                 self.id = "".join(id_list)
                 return self.verification()
@@ -146,6 +152,7 @@ class RegisterVoter:
 
 
 def list_polling_stations():
+    """Fetch and display all polling stations with their constituency names."""
     try:
         with DatabaseManager() as db:
             db.execute_query("""SELECT ps.id, ps.name, ps.code, c.name
@@ -166,6 +173,7 @@ def list_polling_stations():
 
 
 def list_constituencies():
+    """Fetch and display all constituencies with their region names."""
     try:
         with DatabaseManager() as db:
             db.execute_query("""SELECT c.id, c.name, r.name FROM constituencies c
@@ -184,6 +192,7 @@ def list_constituencies():
 
 
 def list_regions():
+    """Fetch and display all regions."""
     try:
         with DatabaseManager() as db:
             db.execute_query("SELECT id, name FROM regions ORDER BY name")
@@ -197,6 +206,7 @@ def list_regions():
 
 
 def list_parties():
+    """Fetch and display all political parties."""
     try:
         with DatabaseManager() as db:
             db.execute_query("SELECT id, name, abbreviation FROM parties ORDER BY name")
@@ -214,6 +224,7 @@ def list_parties():
 
 
 def list_elections():
+    """Fetch and display all elections with their phase."""
     try:
         with DatabaseManager() as db:
             db.execute_query("SELECT id, title, position, phase FROM elections ORDER BY id")
@@ -231,6 +242,7 @@ def list_elections():
 
 
 def setup_election():
+    """Prompt user to create a new election with title and position."""
     title = input("Election title: ")
     position = input("Position (president/mp): ").strip().lower()
     if position not in ('president', 'mp'):
@@ -248,6 +260,7 @@ def setup_election():
 
 
 def transition_election():
+    """Transition an existing election to a new phase."""
     elections = list_elections()
     if not elections:
         return
@@ -265,6 +278,7 @@ def transition_election():
 
 
 def add_party():
+    """Prompt user to add a new political party."""
     name = input("Party name: ")
     abbreviation = input("Abbreviation (e.g., NPP, NDC): ")
     try:
@@ -278,6 +292,7 @@ def add_party():
 
 
 def add_region():
+    """Insert all 16 Ghana regions into the database if none exist."""
     regions = list_regions()
     if regions:
         print("Regions already exist.")
@@ -297,6 +312,7 @@ def add_region():
 
 
 def add_constituency():
+    """Prompt user to add a constituency under an existing region."""
     list_regions()
     try:
         region_id = int(input("Enter region ID: "))
@@ -311,6 +327,7 @@ def add_constituency():
 
 
 def add_polling_station():
+    """Prompt user to add a polling station under an existing constituency."""
     list_constituencies()
     try:
         constituency_id = int(input("Enter constituency ID: "))
@@ -327,6 +344,7 @@ def add_polling_station():
 
 
 def add_presidential_candidate():
+    """Prompt user to add a presidential candidate to an election."""
     list_elections()
     list_parties()
     try:
@@ -344,6 +362,7 @@ def add_presidential_candidate():
 
 
 def add_mp_candidate():
+    """Prompt user to add an MP candidate with optional independent status."""
     list_elections()
     list_parties()
     list_constituencies()
@@ -354,6 +373,7 @@ def add_mp_candidate():
         constituency_id = int(input("Constituency ID: "))
         with DatabaseManager() as db:
             if party_id == 0:
+                # Independent candidate – no party association
                 db.execute_query("""INSERT INTO candidates(name, constituency_id, election_id)
                                     VALUES (%s, %s, %s)""", (name, constituency_id, election_id))
             else:
@@ -367,6 +387,7 @@ def add_mp_candidate():
 
 
 def start_other_registration():
+    """Run the admin menu loop for managing elections, regions, constituencies, stations, parties, and candidates."""
     while True:
         print("""
 1. Manage Elections (create/transition)
@@ -411,6 +432,7 @@ def start_other_registration():
 
 
 def start_voter_registration_process():
+    """Run the voter registration menu loop, collecting details and creating a voter record."""
     while True:
         choice = input("""
 1. Register
@@ -418,6 +440,7 @@ def start_voter_registration_process():
 Enter your choice: """)
 
         if choice == "1":
+            # Generate a random 8-character voter ID
             id_list = random.choices(string.ascii_uppercase + string.digits, k=8)
             ID = "".join(id_list)
             name = input('Full Name: ')
