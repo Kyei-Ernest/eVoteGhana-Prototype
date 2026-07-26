@@ -1,3 +1,4 @@
+import getpass
 import mysql.connector
 from config import Config
 
@@ -109,6 +110,16 @@ CREATE TABLE IF NOT EXISTS votes (
 );
 """
 
+CREATE_ADMINS = """
+CREATE TABLE IF NOT EXISTS admins (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(100) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    role ENUM('super_admin', 'admin', 'viewer') DEFAULT 'admin',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+"""
+
 CREATE_AUDIT_LOG = """
 CREATE TABLE IF NOT EXISTS audit_log (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -186,6 +197,28 @@ def setup_database():
 
         cursor.execute(CREATE_VOTES)
         print("votes table created.")
+
+        cursor.execute(CREATE_ADMINS)
+        print("admins table created.")
+
+        cursor.execute("SELECT COUNT(*) FROM admins")
+        if cursor.fetchone()[0] == 0:
+            import bcrypt
+            print("\n--- First-time setup: Create admin account ---")
+            admin_user = input("Admin username [admin]: ") or "admin"
+            admin_pass = getpass.getpass("Admin password: ")
+            confirm_pass = getpass.getpass("Confirm password: ")
+            while admin_pass != confirm_pass or len(admin_pass) < 8:
+                if admin_pass != confirm_pass:
+                    print("Passwords do not match.")
+                else:
+                    print("Password must be at least 8 characters.")
+                admin_pass = getpass.getpass("Admin password: ")
+                confirm_pass = getpass.getpass("Confirm password: ")
+            hashed = bcrypt.hashpw(admin_pass.encode('utf-8'), bcrypt.gensalt())
+            cursor.execute("INSERT INTO admins(username, password_hash, role) VALUES (%s, %s, 'super_admin')",
+                           (admin_user, hashed.decode('utf-8')))
+            print(f"Admin '{admin_user}' created.")
 
         cursor.execute(CREATE_AUDIT_LOG)
         print("audit_log table created.")

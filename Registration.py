@@ -113,7 +113,27 @@ class RegisterVoter:
                 self.conf_pass = getpass.getpass('Confirm Password: ')
                 return self.verification()
             elif len(self.password) < 10 or len(self.conf_pass) < 10:
-                print('Password must contain more than 10 characters.')
+                print('Password must be at least 10 characters.')
+                self.password = getpass.getpass('Password: ')
+                self.conf_pass = getpass.getpass('Confirm Password: ')
+                return self.verification()
+            elif not any(c.isupper() for c in self.password):
+                print('Password must contain at least one uppercase letter.')
+                self.password = getpass.getpass('Password: ')
+                self.conf_pass = getpass.getpass('Confirm Password: ')
+                return self.verification()
+            elif not any(c.islower() for c in self.password):
+                print('Password must contain at least one lowercase letter.')
+                self.password = getpass.getpass('Password: ')
+                self.conf_pass = getpass.getpass('Confirm Password: ')
+                return self.verification()
+            elif not any(c.isdigit() for c in self.password):
+                print('Password must contain at least one digit.')
+                self.password = getpass.getpass('Password: ')
+                self.conf_pass = getpass.getpass('Confirm Password: ')
+                return self.verification()
+            elif not any(c in '!@#$%^&*()-_=+[]{}|;:,.<>?/~`' for c in self.password):
+                print('Password must contain at least one special character.')
                 self.password = getpass.getpass('Password: ')
                 self.conf_pass = getpass.getpass('Confirm Password: ')
                 return self.verification()

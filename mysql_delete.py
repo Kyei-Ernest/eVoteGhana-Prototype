@@ -1,7 +1,7 @@
 from database import DatabaseManager
 
 VALID_TABLES = {'voterinfo', 'pass_table', 'candidates', 'parties', 'elections',
-                'constituencies', 'polling_stations', 'regions', 'votes', 'audit_log'}
+                'constituencies', 'polling_stations', 'regions', 'votes', 'audit_log', 'admins'}
 
 
 def _validate_table(table):
