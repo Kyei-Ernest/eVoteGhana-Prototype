@@ -7,17 +7,12 @@ from age_calc import age
 import mysql_value_checker as vc
 import mysql_delete as de
 from database import DatabaseManager
-from config import Config
+from audit_log import log_action
 
-# Global variables like legal_age removed or scoped
 
 class RegisterVoter:
-    """
-    Receives and validates the inputs of the voter.
-    """
-
-    def __init__(self, voter_id, name, contact, email, date_of_birth, personal_id, occupation, constituency, password,
-                 conf_pass):
+    def __init__(self, voter_id, name, contact, email, date_of_birth, personal_id, occupation,
+                 constituency_id, polling_station_id, password, conf_pass):
         self.id = voter_id
         self.name = name
         self.date_of_birth = date_of_birth
@@ -25,7 +20,8 @@ class RegisterVoter:
         self.email = email
         self.personal_id = personal_id
         self.occupation = occupation
-        self.constituency = constituency
+        self.constituency_id = constituency_id
+        self.polling_station_id = polling_station_id
         self.password = password
         self.conf_pass = conf_pass
         self.legal_age = 0
@@ -41,63 +37,45 @@ class RegisterVoter:
             return -1
 
     def full_info(self):
-        voter_info = {
-            'ID': self.id,
-            'Name': self.name,
-            'Date of birth': self.date_of_birth,
-            'Age': self.legal_age,
-            'Contact': self.contact,
-            'Email': self.email,
-            'Personal ID': self.personal_id,
-            'Occupation': self.occupation,
-            'constituency': self.constituency,
-        }
         try:
             hashed_password = RegisterVoter.create_hashed_password(self.password)
             python_date = datetime.strptime(self.date_of_birth, '%d/%m/%Y')
             mysql_date = python_date.strftime('%Y-%m-%d')
 
             with DatabaseManager() as db:
-                sql = """INSERT INTO voterinfo(voter_id, name, contact, email, date_of_birth, personal_id, occupation,
-                         constituency, voted) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)"""
-                val = (self.id, self.name, self.contact, self.email, mysql_date, self.personal_id,
-                       self.occupation, self.constituency, 0,)
-                db.execute_query(sql, val)
+                sql = """INSERT INTO voterinfo(voter_id, name, contact, email, date_of_birth, personal_id,
+                         occupation, constituency_id, polling_station_id, voted)
+                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
+                db.execute_query(sql, (self.id, self.name, self.contact, self.email, mysql_date,
+                                       self.personal_id, self.occupation, self.constituency_id,
+                                       self.polling_station_id, 0))
 
-                sql_1 = """INSERT INTO pass_table(voter_id, password) VALUES (%s, %s)"""
-                val_1 = (self.id, hashed_password,)
-                db.execute_query(sql_1, val_1)
+                sql_1 = "INSERT INTO pass_table(voter_id, password) VALUES (%s, %s)"
+                db.execute_query(sql_1, (self.id, hashed_password))
 
-            # Display verified voter details
-            for info in voter_info:
-                print(f'{info}: {voter_info[info]}')
-
+            log_action('voter_registered', 'voterinfo', self.id,
+                       f"Name: {self.name}, Constituency: {self.constituency_id}")
+            print(f"Voter {self.name} registered successfully.")
+            return True
         except ValueError as e:
             print(f"Error parsing date: {e}")
+            return False
         except Exception as err:
             print(f"Error inserting into database: {err}")
+            return False
 
     @staticmethod
     def create_hashed_password(password):
         salt = bcrypt.gensalt()
-        hashed_password = bcrypt.hashpw(password.encode('utf-8'), salt)
-        return hashed_password
+        return bcrypt.hashpw(password.encode('utf-8'), salt)
 
     def verification(self):
         try:
-            # Calculate age first
             self.calculate_age()
 
-            # Checking if voter identification already exists (default DB)
-            id_exists = vc.check_value_exists(table='voterinfo', column='voter_id', user_input=self.id)
-            
-            # Checking if constituency exists (default DB)
-            const_exists = vc.check_value_exists(table='members_of_parliament', column='constituency',
-                                                 user_input=self.constituency)
-            
-            # Check if personal_id exists (Identity DB)
-            exists = vc.check_value_exists(table='ecowas_identity', column='personal_id',
-                                           user_input=self.personal_id, db_name=Config.DB_NAME_IDENTITY)
+            id_exists = vc.check_value_exists('voterinfo', 'voter_id', self.id)
+            const_exists = vc.check_value_exists('constituencies', 'id', self.constituency_id)
+            ps_exists = vc.check_value_exists('polling_stations', 'id', self.polling_station_id)
 
             if id_exists:
                 print("Sorry, this ID already exists for another voter")
@@ -115,9 +93,6 @@ class RegisterVoter:
                 print('Date of birth required')
                 self.date_of_birth = input("Date of birth (DD/MM/YYYY): ")
                 return self.verification()
-            elif not exists:
-                print('Your ID does not exist in the database')
-                return False
             elif not self.occupation:
                 print('Occupation required')
                 self.occupation = input("Occupation: ")
@@ -126,10 +101,12 @@ class RegisterVoter:
                 print("Contact must be exactly 10 digits")
                 self.contact = input("Contact: ")
                 return self.verification()
-            elif not self.constituency or not const_exists:
-                print('Constituency name entered does not exist')
-                self.constituency = input("Constituency: ")
-                return self.verification()
+            elif not const_exists:
+                print('Constituency does not exist')
+                return False
+            elif not ps_exists:
+                print('Polling station does not exist')
+                return False
             elif self.password != self.conf_pass:
                 print('The passwords you entered do not match')
                 self.password = getpass.getpass('Password: ')
@@ -141,235 +118,321 @@ class RegisterVoter:
                 self.conf_pass = getpass.getpass('Confirm Password: ')
                 return self.verification()
             else:
-                self.full_info()
-                return True
+                return self.full_info()
 
         except Exception as err:
             print(f"Database error: {err}")
             return False
 
 
-class RegisterPresident:
-    """
-    Receives and stores inputs about presidential candidates
-    """
-
-    def __init__(self, political_party, presidential_candidate_name):
-        self.political_party = political_party
-        self.presidential_candidate_name = presidential_candidate_name
-
-    def store_pres_info(self):
-        try:
-            with DatabaseManager() as db:
-                # Store presidential candidate info in database
-                sql = "INSERT INTO presidents(political_party, presidential_candidate_name) VALUES (%s, %s)"
-                val = (self.political_party, self.presidential_candidate_name)
-                db.execute_query(sql, val)
-
-                # Create a new column with the political party name in 'members_of_parliament' table
-                # WARNING: Dynamic DDL is risky but keeping logic as is
-                table = 'members_of_parliament'
-                
-                # Sanitize political_party name for column use (basic)
-                new_column = "".join(x for x in self.political_party if x.isalnum())
-                
-                query = f"ALTER TABLE {table} ADD COLUMN {new_column} VARCHAR(255)"
-                db.execute_query(query)
-
-        except Exception as err:
-            print(f"Error storing presidential candidate info: {err}")
+def list_polling_stations():
+    try:
+        with DatabaseManager() as db:
+            db.execute_query("""SELECT ps.id, ps.name, ps.code, c.name
+                                FROM polling_stations ps
+                                JOIN constituencies c ON ps.constituency_id = c.id
+                                ORDER BY c.name, ps.name""")
+            stations = db.fetch_all()
+            if not stations:
+                print("No polling stations found.")
+            else:
+                print("\n--- Polling Stations ---")
+                for s in stations:
+                    print(f"{s[0]}: {s[1]} ({s[2]}) - {s[3]}")
+            return stations
+    except Exception as e:
+        print(f"Error: {e}")
+        return []
 
 
-class RegisterMP(RegisterPresident):
-    """
-    Receives input and stores details about parliamentary candidates
-    """
+def list_constituencies():
+    try:
+        with DatabaseManager() as db:
+            db.execute_query("""SELECT c.id, c.name, r.name FROM constituencies c
+                                JOIN regions r ON c.region_id = r.id ORDER BY c.name""")
+            results = db.fetch_all()
+            if not results:
+                print("No constituencies found.")
+            else:
+                print("\n--- Constituencies ---")
+                for r in results:
+                    print(f"{r[0]}: {r[1]} ({r[2]})")
+            return results
+    except Exception as e:
+        print(f"Error: {e}")
+        return []
 
-    def __init__(self, constituency, political_party="", presidential_candidate_name=""):
-        super().__init__(political_party, presidential_candidate_name)
-        self.constituency = constituency
 
-    def store_mp_info(self):
-        try:
-            with DatabaseManager() as db:
-                # Check if constituency exists in 'members_of_parliament'
-                db.execute_query("SELECT constituency FROM members_of_parliament WHERE constituency LIKE %s;",
-                            (self.constituency,))
-                results = db.fetch_one()
+def list_regions():
+    try:
+        with DatabaseManager() as db:
+            db.execute_query("SELECT id, name FROM regions ORDER BY name")
+            regions = db.fetch_all()
+            for r in regions:
+                print(f"{r[0]}: {r[1]}")
+            return regions
+    except Exception as e:
+        print(f"Error: {e}")
+        return []
 
-                if results is None:
-                    # Insert constituency if it doesn't exist
-                    sql = "INSERT INTO members_of_parliament(constituency) VALUES (%s)"
-                    val = (self.constituency,)
-                    db.execute_query(sql, val)
-                    print("Constituency successfully added.")
-                else:
-                    print("Constituency already exists in database.")
 
-        except Exception as err:
-            print(f"Error storing parliamentary candidate info: {err}")
+def list_parties():
+    try:
+        with DatabaseManager() as db:
+            db.execute_query("SELECT id, name, abbreviation FROM parties ORDER BY name")
+            parties = db.fetch_all()
+            if not parties:
+                print("No parties registered.")
+            else:
+                print("\n--- Political Parties ---")
+                for p in parties:
+                    print(f"{p[0]}: {p[1]} ({p[2] or 'N/A'})")
+            return parties
+    except Exception as e:
+        print(f"Error: {e}")
+        return []
+
+
+def list_elections():
+    try:
+        with DatabaseManager() as db:
+            db.execute_query("SELECT id, title, position, phase FROM elections ORDER BY id")
+            elections = db.fetch_all()
+            if not elections:
+                print("No elections found.")
+            else:
+                print("\n--- Elections ---")
+                for e in elections:
+                    print(f"{e[0]}: {e[1]} ({e[2]}) - Phase: {e[3]}")
+            return elections
+    except Exception as e:
+        print(f"Error: {e}")
+        return []
+
+
+def setup_election():
+    title = input("Election title: ")
+    position = input("Position (president/mp): ").strip().lower()
+    if position not in ('president', 'mp'):
+        print("Invalid position.")
+        return
+    try:
+        with DatabaseManager() as db:
+            db.execute_query("INSERT INTO elections(title, position, phase) VALUES (%s, %s, 'nomination')",
+                             (title, position))
+            eid = db.cursor.lastrowid
+            log_action('election_created', 'elections', eid, f"{title} ({position})")
+            print(f"Election '{title}' created with ID {eid}.")
+    except Exception as e:
+        print(f"Error creating election: {e}")
+
+
+def transition_election():
+    elections = list_elections()
+    if not elections:
+        return
+    try:
+        eid = int(input("Enter election ID to transition: "))
+        from election import PHASES, transition_phase
+        print("Available phases:", ", ".join(PHASES))
+        new_phase = input("Enter new phase: ").strip().lower()
+        if new_phase in PHASES:
+            transition_phase(eid, new_phase)
+        else:
+            print("Invalid phase.")
+    except ValueError:
+        print("Invalid ID.")
+
+
+def add_party():
+    name = input("Party name: ")
+    abbreviation = input("Abbreviation (e.g., NPP, NDC): ")
+    try:
+        with DatabaseManager() as db:
+            db.execute_query("INSERT INTO parties(name, abbreviation) VALUES (%s, %s)", (name, abbreviation))
+            pid = db.cursor.lastrowid
+            log_action('party_added', 'parties', pid, name)
+            print(f"Party '{name}' added.")
+    except Exception as e:
+        print(f"Error adding party: {e}")
+
+
+def add_region():
+    regions = list_regions()
+    if regions:
+        print("Regions already exist.")
+        return
+    ghana_regions = [
+        'Ahafo', 'Ashanti', 'Bono', 'Bono East', 'Central', 'Eastern',
+        'Greater Accra', 'Northern', 'North East', 'Oti', 'Savannah',
+        'Upper East', 'Upper West', 'Volta', 'Western', 'Western North'
+    ]
+    try:
+        with DatabaseManager() as db:
+            for name in ghana_regions:
+                db.execute_query("INSERT IGNORE INTO regions(name) VALUES (%s)", (name,))
+            print("All 16 regions of Ghana added.")
+    except Exception as e:
+        print(f"Error adding regions: {e}")
+
+
+def add_constituency():
+    list_regions()
+    try:
+        region_id = int(input("Enter region ID: "))
+        name = input("Constituency name: ")
+        with DatabaseManager() as db:
+            db.execute_query("INSERT INTO constituencies(name, region_id) VALUES (%s, %s)", (name, region_id))
+            cid = db.cursor.lastrowid
+            log_action('constituency_added', 'constituencies', cid, name)
+            print(f"Constituency '{name}' added.")
+    except Exception as e:
+        print(f"Error adding constituency: {e}")
+
+
+def add_polling_station():
+    list_constituencies()
+    try:
+        constituency_id = int(input("Enter constituency ID: "))
+        name = input("Polling station name: ")
+        code = input("Polling station code: ")
+        with DatabaseManager() as db:
+            db.execute_query("""INSERT INTO polling_stations(name, code, constituency_id)
+                                VALUES (%s, %s, %s)""", (name, code, constituency_id))
+            psid = db.cursor.lastrowid
+            log_action('polling_station_added', 'polling_stations', psid, f"{name} ({code})")
+            print(f"Polling station '{name}' added.")
+    except Exception as e:
+        print(f"Error adding polling station: {e}")
+
+
+def add_presidential_candidate():
+    list_elections()
+    list_parties()
+    try:
+        election_id = int(input("Enter election ID: "))
+        name = input("Candidate name: ")
+        party_id = int(input("Party ID: "))
+        with DatabaseManager() as db:
+            db.execute_query("""INSERT INTO candidates(name, party_id, election_id)
+                                VALUES (%s, %s, %s)""", (name, party_id, election_id))
+            cid = db.cursor.lastrowid
+            log_action('candidate_added', 'candidates', cid, f"President: {name}")
+            print(f"Presidential candidate '{name}' added.")
+    except Exception as e:
+        print(f"Error adding candidate: {e}")
+
+
+def add_mp_candidate():
+    list_elections()
+    list_parties()
+    list_constituencies()
+    try:
+        election_id = int(input("Enter election ID: "))
+        name = input("Candidate name: ")
+        party_id = int(input("Party ID (0 for independent): "))
+        constituency_id = int(input("Constituency ID: "))
+        with DatabaseManager() as db:
+            if party_id == 0:
+                db.execute_query("""INSERT INTO candidates(name, constituency_id, election_id)
+                                    VALUES (%s, %s, %s)""", (name, constituency_id, election_id))
+            else:
+                db.execute_query("""INSERT INTO candidates(name, party_id, constituency_id, election_id)
+                                    VALUES (%s, %s, %s, %s)""", (name, party_id, constituency_id, election_id))
+            cid = db.cursor.lastrowid
+            log_action('candidate_added', 'candidates', cid, f"MP: {name}")
+            print(f"MP candidate '{name}' added.")
+    except Exception as e:
+        print(f"Error adding MP candidate: {e}")
 
 
 def start_other_registration():
-    try:
-        while True:
-            choose = input("""
-1. Add presidential candidate
-2. Add constituency
-3. Add parliamentary candidate
-4. Exit
-Enter your choice: """)
+    while True:
+        print("""
+1. Manage Elections (create/transition)
+2. Add regions (16 Ghana regions)
+3. Add constituency
+4. Add polling station
+5. Add political party
+6. Add presidential candidate
+7. Add MP candidate
+8. List all (constituencies, stations, parties, elections)
+9. Exit
+        """)
+        choice = input("Enter choice: ")
 
-            if choose == '1':
-                # Add presidential candidate
-                while True:
-                    political_party = input("Enter political party: ")
-                    poli_party_exist = vc.check_value_exists('presidents', 'political_party', political_party)
-                    
-                    if poli_party_exist:
-                        print('This political party is already represented.')
-                    else:
-                        presidential_candidate_name = input("Enter presidential candidate name: ")
-                        spr = RegisterPresident(political_party=political_party,
-                                                presidential_candidate_name=presidential_candidate_name)
-                        spr.store_pres_info()
-                        break
-
-            elif choose == '2':
-                # Add constituency
-                constituency = input("Enter constituency name: ")
-                smpr = RegisterMP(constituency=constituency)
-                smpr.store_mp_info()
-
-            elif choose == '3':
-                # Add parliamentary candidate
-                pp_or_ind = input("""Candidate is
-1. Affiliated with a political party
-2. Independent
-Enter your choice: """)
-                if pp_or_ind == "1":
-                    # Delete 'None' columns if any
-                    de.delete_column('members_of_parliament', 'None')
-                    
-                    const_name = input("Enter constituency name: ").casefold()
-                    const_valid = vc.check_value_exists(table='members_of_parliament',
-                                                        column='constituency', user_input=const_name)
-                    if const_valid:
-                        while True:
-                            pp_name = input("Enter political party name: ").casefold()
-                            # Use helper for column check
-                            pp_exist = vc.check_column_exists('members_of_parliament', pp_name)
-                            
-                            if pp_exist:
-                                mp_name = input("Enter candidate name: ")
-                                # Use DB manager for update
-                                with DatabaseManager() as db:
-                                    # Sanitizing column name for safety
-                                    safe_pp_name = "".join(x for x in pp_name if x.isalnum())
-                                    sql = f'UPDATE members_of_parliament SET {safe_pp_name} = %s WHERE constituency = %s'
-                                    db.execute_query(sql, (mp_name, const_name))
-                                break
-                            else:
-                                print("Political Party you entered does not exist in the database.")
-                                break
-                    else:
-                        print("Constituency does not exist.")
-
-                elif pp_or_ind == "2":
-                    try:
-                        de.delete_column('members_of_parliament', 'None')
-                    except Exception:
-                        pass
-                        
-                    constituency_name = input("Enter constituency name: ")
-                    const_valid = vc.check_value_exists(table='members_of_parliament',
-                                                        column='constituency', user_input=constituency_name)
-                    if const_valid:
-                        candidate_name = input("Enter candidate name: ")
-                        with DatabaseManager() as db:
-                            for count in range(1, 10):
-                                column_name = f"independent{count}"
-                                col_exist = vc.check_column_exists(table_name='members_of_parliament',
-                                                                   column_name=column_name)
-                                if col_exist is False:
-                                    db.execute_query(f"ALTER TABLE members_of_parliament ADD COLUMN {column_name} VARCHAR(255)")
-                                    
-                                    sql = (f"UPDATE members_of_parliament SET {column_name} = %s "
-                                           f"WHERE constituency = %s")
-                                    db.execute_query(sql, (candidate_name, constituency_name))
-                                    break
-                                else:
-                                    sql = (f"SELECT * FROM members_of_parliament WHERE constituency = %s AND "
-                                           f"{column_name} IS NULL")
-                                    db.execute_query(sql, (constituency_name,))
-                                    result = db.fetch_one()
-                                    if result is not None:
-                                        sql = (f"UPDATE members_of_parliament SET {column_name} = %s "
-                                               f"WHERE constituency = %s")
-                                        db.execute_query(sql, (candidate_name, constituency_name))
-                                        break
-                                    else:
-                                        pass
-                    else:
-                        print("Constituency does not exist.")
-
-                else:
-                    break
-            elif choose == '4':
-                print("Exiting...")
-                break
-
-            else:
-                print("Invalid choice. Please enter a number from 1 to 4.")
-
-    except Exception as e:
-        print(f"An error occurred: {e}")
+        if choice == '1':
+            print("\n1. Create election\n2. Transition election phase")
+            sub = input("Choice: ")
+            if sub == '1':
+                setup_election()
+            elif sub == '2':
+                transition_election()
+        elif choice == '2':
+            add_region()
+        elif choice == '3':
+            add_constituency()
+        elif choice == '4':
+            add_polling_station()
+        elif choice == '5':
+            add_party()
+        elif choice == '6':
+            add_presidential_candidate()
+        elif choice == '7':
+            add_mp_candidate()
+        elif choice == '8':
+            list_regions()
+            list_constituencies()
+            list_polling_stations()
+            list_parties()
+            list_elections()
+        elif choice == '9':
+            break
 
 
 def start_voter_registration_process():
-    try:
-        while True:
-            choice = input("""
+    while True:
+        choice = input("""
 1. Register
 2. Exit
 Enter your choice: """)
 
-            if choice == "1":
-                id_list = random.choices(string.ascii_uppercase + string.digits, k=8)
-                ID = "".join(id_list)
-                name = input('Full Name: ')
-                dob = input('Date of birth (DD/MM/YYYY): ')
-                contact = input('Contact: ')
-                email = input('Email: ')
-                personal_id = input('Personal ID: ')
-                occupation = input('Occupation: ')
-                constituency = input('Constituency: ')
-                password = getpass.getpass('Password: ')
-                confirm = getpass.getpass('Confirm Password: ')
-
-                svrp = RegisterVoter(
-                    voter_id=ID,
-                    name=name,
-                    date_of_birth=dob,
-                    contact=contact,
-                    email=email,
-                    personal_id=personal_id,
-                    occupation=occupation,
-                    constituency=constituency,
-                    password=password,
-                    conf_pass=confirm
-                )
-                # Verification now calls internal logic including age calc
-                svrp.verification()
-                # If we want to loop until valid, we'd need to adjust verification logic to return value and handle it here
+        if choice == "1":
+            id_list = random.choices(string.ascii_uppercase + string.digits, k=8)
+            ID = "".join(id_list)
+            name = input('Full Name: ')
+            dob = input('Date of birth (DD/MM/YYYY): ')
+            contact = input('Contact: ')
+            email = input('Email: ')
+            personal_id = input('Personal ID: ')
+            occupation = input('Occupation: ')
+            list_constituencies()
+            try:
+                constituency_id = int(input('Constituency ID: '))
+            except ValueError:
+                print("Invalid ID.")
                 break
-
-            elif choice == "2":
-                print("Exiting...")
+            list_polling_stations()
+            try:
+                polling_station_id = int(input('Polling Station ID: '))
+            except ValueError:
+                print("Invalid ID.")
                 break
+            password = getpass.getpass('Password: ')
+            confirm = getpass.getpass('Confirm Password: ')
 
-            else:
-                print("Invalid choice. Please enter 1 or 2.")
+            svrp = RegisterVoter(
+                voter_id=ID, name=name, date_of_birth=dob,
+                contact=contact, email=email, personal_id=personal_id,
+                occupation=occupation, constituency_id=constituency_id,
+                polling_station_id=polling_station_id,
+                password=password, conf_pass=confirm
+            )
+            svrp.verification()
+            break
 
-    except Exception as e:
-        print(f"An error occurred: {e}")
+        elif choice == "2":
+            print("Exiting...")
+            break
+        else:
+            print("Invalid choice. Please enter 1 or 2.")

@@ -1,215 +1,165 @@
-# results verification
 from database import DatabaseManager
+from election import needs_runoff, check_50_percent_plus_one
+from audit_log import log_action
 
-# count votes for each presidential candidate
-def president_vote_count():
+
+def collate_presidential_results(election_id):
     try:
         with DatabaseManager() as db:
-            # Query to select all president IDs from the presidents table
-            select_presidents_sql = "SELECT ID FROM presidents"
-            db.execute_query(select_presidents_sql)
-            presidents = db.fetch_all()
-            
-            # Query to count the total number of votes cast
-            count_total_votes_sql = "SELECT COUNT(*) FROM voterinfo WHERE voted = '1'"
-            db.execute_query(count_total_votes_sql)
-            total_votes_count = db.fetch_one()[0]
+            db.execute_query("""SELECT COUNT(*) FROM votes WHERE election_id = %s""", (election_id,))
+            total_votes = db.fetch_one()[0]
 
-            # Loop through each president
-            for president in presidents:
-                president_id = president[0]
-
-                # Query to count votes for the current president
-                count_votes_sql = "SELECT COUNT(*) FROM voterinfo WHERE president_vote = %s"
-                db.execute_query(count_votes_sql, (president_id,))
-                votes_count = db.fetch_one()[0]
-
-                # Update the number of votes for the current president
-                update_votes_sql = "UPDATE presidents SET number_of_votes = %s WHERE ID = %s"
-                db.execute_query(update_votes_sql, (votes_count, president_id))
-
-                # Calculate the vote percentage for the current president
-                vote_percentage = round((votes_count / total_votes_count) * 100, 1) if total_votes_count > 0 else 0
-
-                # Update the vote percentage for the current president
-                update_percentage_sql = "UPDATE presidents SET vote_percentage = %s WHERE ID = %s"
-                db.execute_query(update_percentage_sql, (f"{vote_percentage}%", president_id))
-
-    except Exception as e:
-        print(f"An error occurred in president_vote_count: {e}")
-
-
-def create_table_if_not_exists(table_name):
-    # WARNING: Creating tables dynamically based on user input/data is generally bad design.
-    # Maintaining logic for compatibility.
-    try:
-        with DatabaseManager() as db:
-            # Fetching the names of MP candidates from 'members_of_parliament' table
-            fetch_table = 'members_of_parliament'
-            query = f"SELECT * FROM {fetch_table} WHERE constituency = %s"
-            db.execute_query(query, (table_name,))
-            result = db.fetch_one()
-
-            if result is None:
-                print(f"No data found for constituency '{table_name}'.")
-                return
-
-            container = []
-            
-            # Collect the result into a container
-            # Result is a tuple. 
-            # Logic from original code: iterate from index 2 to end?
-            for row in result:
-                container.append(row)
-
-            result_length = len(result)
-
-            # Check if the table already exists
-            db.execute_query(f"SHOW TABLES LIKE '{table_name}'")
-            exists = db.fetch_one()
-
-            if not exists:  # if table does not exist
-                # Sanitize table name (basic)
-                safe_table_name = "".join(x for x in table_name if x.isalnum() or x == '_')
-                
-                table_schema = "id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(255), number_of_votes INT"
-                db.execute_query(f"CREATE TABLE {safe_table_name} ({table_schema})")
-
-                # Insert data into the new table
-                for index in range(2, result_length):
-                    data_to_insert = container[index]
-                    insert_name_into_table(safe_table_name, data_to_insert)
-            else:
-                # Insert data into the existing table
-                for index in range(2, result_length):
-                    data_to_insert = container[index]
-                    insert_name_into_table(table_name, data_to_insert, check_exists=True)
-
-    except Exception as e:
-        print(f"An error occurred in create_table_if_not_exists: {e}")
-
-
-def insert_name_into_table(table_name, data, check_exists=False):
-    if data is None:
-        return
-        
-    try:
-        with DatabaseManager() as db:
-            column_name = 'name'
-            if check_exists:
-                check_query = f"SELECT EXISTS(SELECT 1 FROM {table_name} WHERE {column_name} = %s)"
-                db.execute_query(check_query, (data,))
-                exists = db.fetch_one()[0]
-                if exists:
-                    return
-
-            insert_query = f"INSERT INTO {table_name} ({column_name}) VALUES (%s)"
-            db.execute_query(insert_query, (data,))
-            if not check_exists:
-                 # Only print on new bulk insert? Matches original somewhat.
-                 pass
-            print(f"Data {data} inserted successfully into {table_name}.")
-            
-    except Exception as err:
-        print(f"Error inserting name: {err}")
-
-
-def insert_vcounts_into_table(constituency_table, mp_id):
-    fetch_table = 'voterinfo'
-    try:
-        with DatabaseManager() as db:
-            # Prepare the SQL query to select all records from the specified row
-            # mp_vote in voterinfo maps to WHAT? The name? or ID?
-            # In voting.py: `sql = "UPDATE voterinfo SET mp_vote = %s WHERE voter_id = %s"`
-            # voter_choice_mp is the NAME input by user.
-            
-            # Logic here: `WHERE mp_vote = %s`.
-            # But the MP table (constituency table created dynamically) stores 'name' and 'id'.
-            # function arg is `mp_id`.
-            # So we need to get the NAME associated with that mp_id from the constituency table FIRST?
-            # Or is mp_vote storing the ID? The code says `voter_choice_mp = input("Cast vote (Enter Name) ->> ")`
-            # So mp_vote stores NAME.
-            
-            # But `insert_vcounts_into_table` is called with `row_3[0]` which is `id` from `constituency_table`.
-            # We need the NAME corresponding to that ID to count votes.
-            
-            # Get Name for this ID
-            name_query = f"SELECT name FROM {constituency_table} WHERE id = %s"
-            db.execute_query(name_query, (mp_id,))
-            name_res = db.fetch_one()
-            
-            if name_res:
-                mp_name = name_res[0]
-                query = f"SELECT count(*) FROM {fetch_table} WHERE constituency = %s and mp_vote = %s"
-                db.execute_query(query, (constituency_table, mp_name,))
-                result = db.fetch_one()
-    
-                if result:
-                    query = f"UPDATE {constituency_table} SET number_of_votes = %s WHERE id = %s"
-                    db.execute_query(query, (result[0], mp_id))
-            
-    except Exception as err:
-        print(f"Error counting votes: {err}")
-
-
-def mp_vote_count():
-    try:
-        with DatabaseManager() as db:
-            query = "SELECT constituency FROM members_of_parliament"
-            db.execute_query(query)
+            db.execute_query("""SELECT v.candidate_id, c.name, p.name as party, COUNT(*) as cnt
+                                FROM votes v
+                                JOIN candidates c ON v.candidate_id = c.id
+                                LEFT JOIN parties p ON c.party_id = p.id
+                                WHERE v.election_id = %s AND c.constituency_id IS NULL
+                                GROUP BY v.candidate_id, c.name, p.name
+                                ORDER BY cnt DESC""", (election_id,))
             results = db.fetch_all()
 
-            for row in results:
-                table = row[0]
-                create_table_if_not_exists(table)
+            return {'total': total_votes, 'results': results}
+    except Exception as e:
+        print(f"Error collating presidential results: {e}")
+        return {'total': 0, 'results': []}
 
-                query_1 = f"SELECT id FROM {table}"
-                db.execute_query(query_1)
-                result_1 = db.fetch_all()
 
-                for row_3 in result_1:
-                    insert_vcounts_into_table(table, row_3[0])
+def collate_mp_results(election_id):
+    try:
+        with DatabaseManager() as db:
+            db.execute_query("""SELECT DISTINCT c.constituency_id, con.name as const_name, r.name as region_name
+                                FROM candidates c
+                                JOIN constituencies con ON c.constituency_id = con.id
+                                JOIN regions r ON con.region_id = r.id
+                                WHERE c.election_id = %s
+                                ORDER BY r.name, con.name""", (election_id,))
+            constituencies = db.fetch_all()
 
-    except Exception as err:
-        print(f"Error in mp_vote_count: {err}")
+            results_by_constituency = {}
+            for const_id, const_name, region_name in constituencies:
+                db.execute_query("""SELECT v.candidate_id, c.name, p.name as party, COUNT(*) as cnt
+                                    FROM votes v
+                                    JOIN candidates c ON v.candidate_id = c.id
+                                    LEFT JOIN parties p ON c.party_id = p.id
+                                    WHERE v.election_id = %s AND c.constituency_id = %s
+                                    GROUP BY v.candidate_id, c.name, p.name
+                                    ORDER BY cnt DESC""", (election_id, const_id))
+                cand_results = db.fetch_all()
+                results_by_constituency[const_id] = {
+                    'name': const_name,
+                    'region': region_name,
+                    'results': cand_results
+                }
+
+            return results_by_constituency
+    except Exception as e:
+        print(f"Error collating MP results: {e}")
+        return {}
+
+
+def collate_regional_results(election_id):
+    try:
+        with DatabaseManager() as db:
+            db.execute_query("""SELECT r.id, r.name, COUNT(*) as total
+                                FROM votes v
+                                JOIN candidates c ON v.candidate_id = c.id
+                                JOIN constituencies con ON c.constituency_id = con.id
+                                JOIN regions r ON con.region_id = r.id
+                                WHERE v.election_id = %s AND c.constituency_id IS NOT NULL
+                                GROUP BY r.id, r.name
+                                ORDER BY r.name""", (election_id,))
+            return db.fetch_all()
+    except Exception as e:
+        print(f"Error collating regional results: {e}")
+        return []
+
+
+def format_form_1a(election_id, results):
+    print("\n" + "=" * 60)
+    print("            EC GHANA FORM 1A - PRESIDENTIAL RESULTS")
+    print("=" * 60)
+    print(f"{'Candidate':<25} {'Party':<15} {'Votes':<10} {'%':<8}")
+    print("-" * 60)
+    for row in results['results']:
+        cand_id, name, party, count = row
+        pct = round((count / results['total'] * 100), 1) if results['total'] > 0 else 0
+        print(f"{name:<25} {party or 'IND':<15} {count:<10} {pct:<8}%")
+    print("-" * 60)
+    print(f"{'Total Valid Votes':<40} {results['total']:<10}")
+    print("=" * 60)
+
+    if check_50_percent_plus_one(results['total'], results['results'][0][3] if results['results'] else 0):
+        winner = results['results'][0][1]
+        party = results['results'][0][2] or ""
+        print(f"\nWINNER: {winner} ({party}) - 50%+1 threshold achieved")
+    else:
+        print(f"\nNO WINNER: Runoff required")
+        print(f"Top two: {results['results'][0][1]} vs {results['results'][1][1]}")
+
+
+def format_form_1c(constituency_name, results, region_name=""):
+    print("\n" + "-" * 60)
+    print(f"     EC GHANA FORM 1C - PARLIAMENTARY: {constituency_name}")
+    if region_name:
+        print(f"     Region: {region_name}")
+    print("-" * 60)
+    print(f"{'Candidate':<25} {'Party':<15} {'Votes':<10}")
+    print("-" * 60)
+    total = 0
+    for row in results:
+        cand_id, name, party, count = row
+        total += count
+        print(f"{name:<25} {party or 'IND':<15} {count:<10}")
+    print("-" * 60)
+    print(f"{'Total Valid Votes':<40} {total:<10}")
+    print("-" * 60)
 
 
 def display_results():
     try:
-        print(f'\n-Presidential vote results ')
         with DatabaseManager() as db:
-            # fetch presidential results from database
-            pres_query = "SELECT * FROM presidents"
-            db.execute_query(pres_query)
-            pres_results = db.fetch_all()
-            for LIST in pres_results:
-                # LIST: id, party, name, votes, percentage
-                print(f'{LIST[0]} | {LIST[1]} - {LIST[2]} | {LIST[3]} | - {LIST[4]}')
+            db.execute_query("""SELECT id, title, position, phase
+                                FROM elections WHERE phase IN ('results', 'closed')
+                                ORDER BY id""")
+            elections = db.fetch_all()
 
-            # Calculate and store
-            president_vote_count()
-            
-            # Recalculate MP votes
-            mp_vote_count()
-            
-            # Display MP results?
-            # Original code used global `table` which was set in `mp_vote_count` loop (so it was only the LAST table).
-            # This logic seems flawed in original: it only printed results for the LAST constituency processed.
-            # I will improve it to print ALL.
-            
-            query = "SELECT constituency FROM members_of_parliament"
-            db.execute_query(query)
-            constituencies = db.fetch_all()
-            
-            for const_row in constituencies:
-                table = const_row[0]
-                print(f'\n-MP vote results for {table} constituency')
-                mp_query = f"SELECT * FROM {table}"
-                db.execute_query(mp_query)
-                mp_results = db.fetch_all()
-                for LIST in mp_results:
-                     # id, name, votes
-                    print(f'{LIST[0]} | {LIST[1]} - | {LIST[2]} |')
+            if not elections:
+                print("No completed elections found.")
+                return
+
+            for e in elections:
+                eid, title, position, phase = e
+                print(f"\n{'=' * 60}")
+                print(f"  ELECTION: {title} ({position})")
+                print(f"{'=' * 60}")
+
+                if position == 'president':
+                    pres_results = collate_presidential_results(eid)
+                    format_form_1a(eid, pres_results)
+
+                    if needs_runoff(eid):
+                        print("\n*** PRESIDENTIAL RUNOFF REQUIRED ***")
+                        print("No candidate achieved the constitutional 50%+1 threshold.")
+
+                    log_action('results_viewed', 'elections', eid, f"Presidential results displayed")
+
+                elif position == 'mp':
+                    mp_results = collate_mp_results(eid)
+                    regional = collate_regional_results(eid)
+
+                    for const_id, data in mp_results.items():
+                        format_form_1c(data['name'], data['results'], data['region'])
+
+                    if regional:
+                        print("\n" + "=" * 60)
+                        print("  REGIONAL SUMMARY")
+                        print("=" * 60)
+                        print(f"{'Region':<20} {'Votes Cast':<12}")
+                        print("-" * 32)
+                        for r in regional:
+                            print(f"{r[1]:<20} {r[2]:<12}")
+
+                    log_action('results_viewed', 'elections', eid, "MP results displayed")
 
     except Exception as err:
         print(f"Error displaying results: {err}")

@@ -1,58 +1,106 @@
-import mysql_value_checker as vc
 from database import DatabaseManager
 
-def display_presidents():
-    """Display presidential candidates to voter"""
+
+def get_presidential_election_id():
     try:
-        print("** Vote for your preferred presidential candidate **")
         with DatabaseManager() as db:
-            sql1 = "SELECT ID, political_party, presidential_candidate_name FROM presidents"
-            db.execute_query(sql1)
-            myr1 = db.fetch_all()
-            for x, y, z in myr1:
-                print(f"{x} {y} - {z}")
+            db.execute_query("""SELECT id FROM elections
+                                WHERE position = 'president' AND phase = 'voting'
+                                ORDER BY id DESC LIMIT 1""")
+            row = db.fetch_one()
+            return row[0] if row else None
     except Exception as e:
-        print(f"Error while retrieving presidential candidates: {e}")
+        print(f"Error: {e}")
+        return None
 
 
-def display_mp(voter_id):
-    """Check the existence of the voter file and display MPs for the voter's constituency.
-    Returns a dict mapping display numbers to candidate names."""
-    candidate_map = {}
+def get_mp_election_id():
     try:
-        voterid_exists = vc.check_value_exists(table='voterinfo', column='voter_id', user_input=voter_id)
+        with DatabaseManager() as db:
+            db.execute_query("""SELECT id FROM elections
+                                WHERE position = 'mp' AND phase = 'voting'
+                                ORDER BY id DESC LIMIT 1""")
+            row = db.fetch_one()
+            return row[0] if row else None
+    except Exception as e:
+        print(f"Error: {e}")
+        return None
 
-        if voterid_exists:
-            print("ID successfully verified\n")
 
-            with DatabaseManager() as db:
-                query_constituency = "SELECT constituency FROM voterinfo WHERE voter_id = %s"
-                db.execute_query(query_constituency, (voter_id,))
-                constituencies = db.fetch_all()
+def display_presidents(election_id=None):
+    try:
+        if election_id is None:
+            election_id = get_presidential_election_id()
+        if election_id is None:
+            print("No active presidential election.")
+            return {}
 
-                for constituency in constituencies:
-                    constituency_name = constituency[0]
-                    print(f"** Vote for your preferred MP for {constituency_name} **")
+        with DatabaseManager() as db:
+            sql = """SELECT c.id, c.name, p.name, p.abbreviation
+                     FROM candidates c
+                     LEFT JOIN parties p ON c.party_id = p.id
+                     WHERE c.election_id = %s AND c.constituency_id IS NULL
+                     ORDER BY c.id"""
+            db.execute_query(sql, (election_id,))
+            candidates = db.fetch_all()
 
-                    query_mps = "SELECT * FROM members_of_parliament WHERE constituency = %s"
-                    db.execute_query(query_mps, (constituency_name,))
-                    mps = db.fetch_one()
-                    
-                    if mps:
-                        count = 0
-                        candidates = mps[2:]
-                        for mp in candidates:
-                            count += 1
-                            if mp:
-                                print(f"{count}. {mp}")
-                                candidate_map[str(count)] = mp
-                    else:
-                        print(f"No MPs found for constituency {constituency_name}")
+            if not candidates:
+                print("No presidential candidates found.")
+                return {}
 
-        else:
-            print("Sorry, you have entered an invalid id. Try again")
-            
+            print("** Vote for your preferred presidential candidate **")
+            candidate_map = {}
+            for c in candidates:
+                print(f"{c[0]}: {c[1]} ({c[2] or 'Independent'})")
+                candidate_map[str(c[0])] = c[1]
+            return candidate_map
+    except Exception as e:
+        print(f"Error displaying candidates: {e}")
+        return {}
+
+
+def display_mp(voter_id, election_id=None):
+    try:
+        if election_id is None:
+            election_id = get_mp_election_id()
+        if election_id is None:
+            print("No active MP election.")
+            return {}
+
+        with DatabaseManager() as db:
+            db.execute_query("SELECT constituency_id, polling_station_id FROM voterinfo WHERE voter_id = %s",
+                             (voter_id,))
+            voter = db.fetch_one()
+            if not voter:
+                print("Voter not found.")
+                return {}
+            constituency_id = voter[0]
+
+            db.execute_query("SELECT name FROM constituencies WHERE id = %s", (constituency_id,))
+            const_row = db.fetch_one()
+            const_name = const_row[0] if const_row else "Unknown"
+
+            print(f"** Vote for your preferred MP for {const_name} **")
+
+            sql = """SELECT c.id, c.name, p.name, p.abbreviation
+                     FROM candidates c
+                     LEFT JOIN parties p ON c.party_id = p.id
+                     WHERE c.election_id = %s AND c.constituency_id = %s
+                     ORDER BY c.id"""
+            db.execute_query(sql, (election_id, constituency_id))
+            candidates = db.fetch_all()
+
+            if not candidates:
+                print(f"No MP candidates found for {const_name}.")
+                return {}
+
+            candidate_map = {}
+            for c in candidates:
+                party = c[2] or "Independent"
+                abbr = c[3] or ""
+                print(f"{c[0]}: {c[1]} ({party} {abbr})".strip())
+                candidate_map[str(c[0])] = c[1]
+            return candidate_map
     except Exception as e:
         print(f"Error in display_mp: {e}")
-    
-    return candidate_map
+        return {}

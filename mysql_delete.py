@@ -1,31 +1,24 @@
 from database import DatabaseManager
-from mysql.connector import Error
 
-def delete_column(table, column, db_name=None):
-    """
-    Deletes a column from a table.
-    WARNING: Vulnerable to SQL injection via table/column names if not sanitized.
-    """
-    try:
-        with DatabaseManager(db_name) as db:
-            # Note: Table/Column names cannot be parameterized in MySQL connector usually.
-            # Ideally, we should validate them against a whitelist or schema.
-            # Keeping strictly as-is logic for now but using the new DB manager.
-            query = f"ALTER TABLE {table} DROP COLUMN {column}"
-            db.execute_query(query)
-            print(f"Column {column} deleted successfully from {table}.")
-    except Error as e:
-        print(f"Error deleting column: {e}")
+VALID_TABLES = {'voterinfo', 'pass_table', 'candidates', 'parties', 'elections',
+                'constituencies', 'polling_stations', 'regions', 'votes', 'audit_log'}
 
-def delete_row(table, condition, db_name=None):
-    """
-    Deletes a row based on a condition string.
-    WARNING: Highly vulnerable to SQL injection via condition string.
-    """
+
+def _validate_table(table):
+    if table not in VALID_TABLES:
+        raise ValueError(f"Invalid table: {table}")
+    return table
+
+
+def delete_row(table, column, value, db_name=None):
     try:
+        _validate_table(table)
         with DatabaseManager(db_name) as db:
-            query = f"DELETE FROM {table} WHERE {condition}"
-            db.execute_query(query)
-            print(f"Row deleted successfully from {table}.")
-    except Error as e:
+            query = f"DELETE FROM {table} WHERE {column} = %s"
+            db.execute_query(query, (value,))
+            affected = db.cursor.rowcount
+            print(f"Deleted {affected} row(s) from {table}.")
+            return affected
+    except Exception as e:
         print(f"Error deleting row: {e}")
+        return 0
