@@ -8,13 +8,17 @@ from audit_log import log_action
 BACKUP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'backups')
 
 
-def _ensure_backup_dir():
-    """Create the backups directory if it does not exist."""
+def _ensure_backup_dir() -> None:
     os.makedirs(BACKUP_DIR, exist_ok=True)
 
 
-def backup_database():
-    """Dump the main database to a timestamped SQL file using mysqldump."""
+def _build_env() -> dict:
+    env = os.environ.copy()
+    env['MYSQL_PWD'] = Config.DB_PASSWORD
+    return env
+
+
+def backup_database() -> None:
     _ensure_backup_dir()
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     filename = f"evote_backup_{timestamp}.sql"
@@ -25,12 +29,11 @@ def backup_database():
             'mysqldump',
             f'--host={Config.DB_HOST}',
             f'--user={Config.DB_USER}',
-            f'--password={Config.DB_PASSWORD}',
             f'--port={Config.DB_PORT}',
             Config.DB_NAME_MAIN,
         ]
         with open(filepath, 'w') as f:
-            result = subprocess.run(cmd, stdout=f, stderr=subprocess.PIPE, text=True)
+            result = subprocess.run(cmd, stdout=f, stderr=subprocess.PIPE, text=True, env=_build_env())
 
         if result.returncode == 0:
             size = os.path.getsize(filepath)
@@ -44,8 +47,7 @@ def backup_database():
         print(f"Backup error: {e}")
 
 
-def restore_database():
-    """Restore the main database from a previously created backup SQL file using mysql."""
+def restore_database() -> None:
     _ensure_backup_dir()
     backups = sorted([f for f in os.listdir(BACKUP_DIR) if f.endswith('.sql')], reverse=True)
 
@@ -78,15 +80,14 @@ def restore_database():
             'mysql',
             f'--host={Config.DB_HOST}',
             f'--user={Config.DB_USER}',
-            f'--password={Config.DB_PASSWORD}',
             f'--port={Config.DB_PORT}',
             Config.DB_NAME_MAIN,
         ]
         with open(filepath, 'r') as f:
-            result = subprocess.run(cmd, stdin=f, stderr=subprocess.PIPE, text=True)
+            result = subprocess.run(cmd, stdin=f, stderr=subprocess.PIPE, text=True, env=_build_env())
 
         if result.returncode == 0:
-            log_action('restore_completed', 'database', filename, f"Restored from backup")
+            log_action('restore_completed', 'database', filename, "Restored from backup")
             print(f"Database restored from {filename}.")
         else:
             print(f"Restore failed: {result.stderr}")

@@ -1,39 +1,35 @@
 from database import DatabaseManager
 
-VALID_TABLES = {'voterinfo', 'pass_table', 'candidates', 'parties', 'elections',
-                'constituencies', 'polling_stations', 'regions', 'votes', 'audit_log', 'admins'}
-VALID_COLUMNS_CACHE = {}
+VALID_TABLES: set[str] = {'voterinfo', 'pass_table', 'candidates', 'parties', 'elections',
+                          'constituencies', 'polling_stations', 'regions', 'votes', 'audit_log', 'admins'}
+VALID_COLUMNS_CACHE: dict[str, set[str]] = {}
 
 
-def _get_valid_columns(table):
-    """Return the set of valid column names for a given table, caching the result."""
+def _get_valid_columns(table: str) -> set[str]:
     if table not in VALID_COLUMNS_CACHE:
         try:
             with DatabaseManager() as db:
-                db.execute_query("SHOW COLUMNS FROM {}".format(table))
+                db.execute_query(f"SHOW COLUMNS FROM {table}")
                 VALID_COLUMNS_CACHE[table] = {row[0] for row in db.fetch_all()}
         except Exception:
             return set()
     return VALID_COLUMNS_CACHE[table]
 
 
-def _validate_table(table):
-    """Raise ValueError if the table name is not in the allowed set."""
+def _validate_table(table: str) -> str:
     if table not in VALID_TABLES:
         raise ValueError(f"Invalid table: {table}")
     return table
 
 
-def _validate_column(table, column):
-    """Raise ValueError if the column does not exist in the specified table."""
+def _validate_column(table: str, column: str) -> str:
     valid = _get_valid_columns(table)
     if column not in valid:
         raise ValueError(f"Invalid column '{column}' for table '{table}'")
     return column
 
 
-def check_value_exists(table, column, user_input, db_name=None):
-    """Return True if a row with the given value exists in the specified table column."""
+def check_value_exists(table: str, column: str, user_input: str, db_name: str | None = None) -> bool:
     try:
         _validate_table(table)
         _validate_column(table, column)
@@ -46,12 +42,11 @@ def check_value_exists(table, column, user_input, db_name=None):
         return False
 
 
-def check_column_exists(table_name, column_name, db_name=None):
-    """Return True if the specified column exists in the given table."""
+def check_column_exists(table_name: str, column_name: str, db_name: str | None = None) -> bool:
     try:
         _validate_table(table_name)
         with DatabaseManager(db_name) as db:
-            db.execute_query("SHOW COLUMNS FROM {}".format(table_name))
+            db.execute_query(f"SHOW COLUMNS FROM {table_name}")
             return any(row[0] == column_name for row in db.fetch_all())
     except Exception as e:
         print(f"Error checking column: {e}")

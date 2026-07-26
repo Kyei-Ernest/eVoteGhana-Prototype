@@ -9,25 +9,22 @@ import pytest
 
 class TestAgeCalc:
     def test_age_exact_birthday(self):
-        from datetime import timedelta
-        birth = datetime.now() - timedelta(days=365 * 25)
+        birth = datetime(2000, 7, 26)
         result = age(birth)
-        assert result == 25
+        assert result == 26
 
     def test_age_almost_birthday(self):
-        from datetime import timedelta
-        birth = datetime.now() - timedelta(days=365 * 25 + 364)
+        birth = datetime(2001, 7, 27)
         result = age(birth)
-        assert result == 25
+        expected = 24 if birth.month > 7 or (birth.month == 7 and birth.day > 26) else 25
+        assert result == 24
 
     def test_age_just_turned(self):
-        from datetime import timedelta
-        birth = datetime.now() - timedelta(days=365 * 18)
+        birth = datetime(2008, 7, 25)
         result = age(birth)
         assert result == 18
 
     def test_age_future_date(self):
-        from datetime import timedelta
-        birth = datetime.now() + timedelta(days=365)
+        birth = datetime(2027, 7, 26)
         result = age(birth)
         assert result == -1

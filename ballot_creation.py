@@ -1,13 +1,10 @@
 from database import DatabaseManager
 
 
-def get_presidential_election_id():
-    """Return the ID of the active presidential election in voting phase, or None."""
+def get_presidential_election_id() -> int | None:
     try:
         with DatabaseManager() as db:
-            db.execute_query("""SELECT id FROM elections
-                                WHERE position = 'president' AND phase = 'voting'
-                                ORDER BY id DESC LIMIT 1""")
+            db.execute_query("SELECT id FROM elections WHERE position = 'president' AND phase = 'voting' ORDER BY id DESC LIMIT 1")
             row = db.fetch_one()
             return row[0] if row else None
     except Exception as e:
@@ -15,13 +12,10 @@ def get_presidential_election_id():
         return None
 
 
-def get_mp_election_id():
-    """Return the ID of the active MP election in voting phase, or None."""
+def get_mp_election_id() -> int | None:
     try:
         with DatabaseManager() as db:
-            db.execute_query("""SELECT id FROM elections
-                                WHERE position = 'mp' AND phase = 'voting'
-                                ORDER BY id DESC LIMIT 1""")
+            db.execute_query("SELECT id FROM elections WHERE position = 'mp' AND phase = 'voting' ORDER BY id DESC LIMIT 1")
             row = db.fetch_one()
             return row[0] if row else None
     except Exception as e:
@@ -29,8 +23,7 @@ def get_mp_election_id():
         return None
 
 
-def display_presidents(election_id=None):
-    """Display presidential candidates and return a mapping of candidate numbers to names."""
+def display_presidents(election_id: int | None = None) -> dict[str, str]:
     try:
         if election_id is None:
             election_id = get_presidential_election_id()
@@ -39,12 +32,7 @@ def display_presidents(election_id=None):
             return {}
 
         with DatabaseManager() as db:
-            sql = """SELECT c.id, c.name, p.name, p.abbreviation
-                     FROM candidates c
-                     LEFT JOIN parties p ON c.party_id = p.id
-                     WHERE c.election_id = %s AND c.constituency_id IS NULL
-                     ORDER BY c.id"""
-            db.execute_query(sql, (election_id,))
+            db.execute_query("SELECT c.id, c.name, p.name, p.abbreviation FROM candidates c LEFT JOIN parties p ON c.party_id = p.id WHERE c.election_id = %s AND c.constituency_id IS NULL ORDER BY c.id", (election_id,))
             candidates = db.fetch_all()
 
             if not candidates:
@@ -52,7 +40,7 @@ def display_presidents(election_id=None):
                 return {}
 
             print("** Vote for your preferred presidential candidate **")
-            candidate_map = {}
+            candidate_map: dict[str, str] = {}
             for c in candidates:
                 print(f"{c[0]}: {c[1]} ({c[2] or 'Independent'})")
                 candidate_map[str(c[0])] = c[1]
@@ -62,8 +50,7 @@ def display_presidents(election_id=None):
         return {}
 
 
-def display_mp(voter_id, election_id=None):
-    """Display MP candidates for the voter's constituency and return a mapping of numbers to names."""
+def display_mp(voter_id: str, election_id: int | None = None) -> dict[str, str]:
     try:
         if election_id is None:
             election_id = get_mp_election_id()
@@ -72,8 +59,7 @@ def display_mp(voter_id, election_id=None):
             return {}
 
         with DatabaseManager() as db:
-            db.execute_query("SELECT constituency_id, polling_station_id FROM voterinfo WHERE voter_id = %s",
-                             (voter_id,))
+            db.execute_query("SELECT constituency_id, polling_station_id FROM voterinfo WHERE voter_id = %s", (voter_id,))
             voter = db.fetch_one()
             if not voter:
                 print("Voter not found.")
@@ -86,19 +72,14 @@ def display_mp(voter_id, election_id=None):
 
             print(f"** Vote for your preferred MP for {const_name} **")
 
-            sql = """SELECT c.id, c.name, p.name, p.abbreviation
-                     FROM candidates c
-                     LEFT JOIN parties p ON c.party_id = p.id
-                     WHERE c.election_id = %s AND c.constituency_id = %s
-                     ORDER BY c.id"""
-            db.execute_query(sql, (election_id, constituency_id))
+            db.execute_query("SELECT c.id, c.name, p.name, p.abbreviation FROM candidates c LEFT JOIN parties p ON c.party_id = p.id WHERE c.election_id = %s AND c.constituency_id = %s ORDER BY c.id", (election_id, constituency_id))
             candidates = db.fetch_all()
 
             if not candidates:
                 print(f"No MP candidates found for {const_name}.")
                 return {}
 
-            candidate_map = {}
+            candidate_map: dict[str, str] = {}
             for c in candidates:
                 party = c[2] or "Independent"
                 abbr = c[3] or ""

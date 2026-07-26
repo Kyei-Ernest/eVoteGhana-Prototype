@@ -1,8 +1,8 @@
 import os
 
-LANGUAGE = os.getenv('LANGUAGE', 'en')
+LANGUAGE: str = os.getenv('LANGUAGE', 'en')
 
-TRANSLATIONS = {
+TRANSLATIONS: dict[str, dict[str, str]] = {
     'en': {
         'welcome': '=== GHANA VOTING SYSTEM MAIN MENU ===',
         'reg_setup': '1. Registration & Setup (Admin/Voter)',
@@ -76,8 +76,7 @@ TRANSLATIONS = {
 }
 
 
-def _(key, **kwargs):
-    """Translate a key into the configured language, falling back to English, with optional formatting."""
+def _(key: str, **kwargs: str) -> str:
     lang = LANGUAGE
     if lang not in TRANSLATIONS:
         lang = 'en'

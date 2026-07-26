@@ -1,10 +1,6 @@
-import math
 from datetime import datetime
 
 
-def age(then):
-    """Calculate a person's age in whole years from their date of birth to the current date."""
+def age(birthdate: datetime) -> int:
     now = datetime.now()
-    delta = now - then
-    ages = delta.days / 365
-    return math.floor(ages)
+    return now.year - birthdate.year - ((now.month, now.day) < (birthdate.month, birthdate.day))

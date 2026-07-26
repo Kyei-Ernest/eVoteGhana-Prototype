@@ -4,14 +4,12 @@ from config import Config
 
 
 class DatabaseManager:
-    """Context manager for MySQL database connections with automatic commit/rollback."""
-    def __init__(self, database_name=None):
+    def __init__(self, database_name: str | None = None):
         self.config = Config.get_db_config(database_name)
-        self.conn = None
-        self.cursor = None
+        self.conn: mysql.connector.MySQLConnection | None = None
+        self.cursor: mysql.connector.cursor.MySQLCursor | None = None
 
-    def __enter__(self):
-        """Open a database connection and return the manager instance."""
+    def __enter__(self) -> 'DatabaseManager':
         try:
             self.conn = mysql.connector.connect(**self.config)
             self.cursor = self.conn.cursor(buffered=True)
@@ -20,8 +18,7 @@ class DatabaseManager:
             print(f"Error connecting to database: {e}")
             raise
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Close the cursor and connection, committing on success or rolling back on error."""
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         if self.cursor:
             self.cursor.close()
         if self.conn:
@@ -31,8 +28,7 @@ class DatabaseManager:
                 self.conn.rollback()
             self.conn.close()
 
-    def execute_query(self, query, params=None):
-        """Execute a SQL query with optional parameters and return the cursor."""
+    def execute_query(self, query: str, params: tuple | None = None) -> mysql.connector.cursor.MySQLCursor:
         try:
             if params:
                 self.cursor.execute(query, params)
@@ -43,15 +39,12 @@ class DatabaseManager:
             print(f"Error executing query: {e}")
             raise
 
-    def fetch_all(self):
-        """Fetch all remaining rows from the last executed query."""
+    def fetch_all(self) -> list[tuple]:
         return self.cursor.fetchall()
 
-    def fetch_one(self):
-        """Fetch the next row from the last executed query."""
+    def fetch_one(self) -> tuple | None:
         return self.cursor.fetchone()
 
 
-def get_connection(database_name=None):
-    """Create and return a raw MySQL connection outside the context manager."""
+def get_connection(database_name: str | None = None) -> mysql.connector.MySQLConnection:
     return mysql.connector.connect(**Config.get_db_config(database_name))

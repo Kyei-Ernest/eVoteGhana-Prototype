@@ -1,18 +1,16 @@
 from database import DatabaseManager
 
-VALID_TABLES = {'voterinfo', 'pass_table', 'candidates', 'parties', 'elections',
-                'constituencies', 'polling_stations', 'regions', 'votes', 'audit_log', 'admins'}
+VALID_TABLES: set[str] = {'voterinfo', 'pass_table', 'candidates', 'parties', 'elections',
+                          'constituencies', 'polling_stations', 'regions', 'votes', 'audit_log', 'admins'}
 
 
-def _validate_table(table):
-    """Raise ValueError if the table name is not in the allowed set."""
+def _validate_table(table: str) -> str:
     if table not in VALID_TABLES:
         raise ValueError(f"Invalid table: {table}")
     return table
 
 
-def delete_row(table, column, value, db_name=None):
-    """Delete rows from a validated table where the column matches the given value."""
+def delete_row(table: str, column: str, value: str, db_name: str | None = None) -> int:
     try:
         _validate_table(table)
         with DatabaseManager(db_name) as db:

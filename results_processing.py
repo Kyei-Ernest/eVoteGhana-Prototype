@@ -3,20 +3,13 @@ from election import needs_runoff, check_50_percent_plus_one
 from audit_log import log_action
 
 
-def collate_presidential_results(election_id):
-    """Aggregate presidential vote counts per candidate for a given election."""
+def collate_presidential_results(election_id: int) -> dict:
     try:
         with DatabaseManager() as db:
-            db.execute_query("""SELECT COUNT(*) FROM votes WHERE election_id = %s""", (election_id,))
+            db.execute_query("SELECT COUNT(*) FROM votes WHERE election_id = %s", (election_id,))
             total_votes = db.fetch_one()[0]
 
-            db.execute_query("""SELECT v.candidate_id, c.name, p.name as party, COUNT(*) as cnt
-                                FROM votes v
-                                JOIN candidates c ON v.candidate_id = c.id
-                                LEFT JOIN parties p ON c.party_id = p.id
-                                WHERE v.election_id = %s AND c.constituency_id IS NULL
-                                GROUP BY v.candidate_id, c.name, p.name
-                                ORDER BY cnt DESC""", (election_id,))
+            db.execute_query("SELECT v.candidate_id, c.name, p.name as party, COUNT(*) as cnt FROM votes v JOIN candidates c ON v.candidate_id = c.id LEFT JOIN parties p ON c.party_id = p.id WHERE v.election_id = %s AND c.constituency_id IS NULL GROUP BY v.candidate_id, c.name, p.name ORDER BY cnt DESC", (election_id,))
             results = db.fetch_all()
 
             return {'total': total_votes, 'results': results}
@@ -25,27 +18,15 @@ def collate_presidential_results(election_id):
         return {'total': 0, 'results': []}
 
 
-def collate_mp_results(election_id):
-    """Aggregate MP vote counts grouped by constituency for a given election."""
+def collate_mp_results(election_id: int) -> dict:
     try:
         with DatabaseManager() as db:
-            db.execute_query("""SELECT DISTINCT c.constituency_id, con.name as const_name, r.name as region_name
-                                FROM candidates c
-                                JOIN constituencies con ON c.constituency_id = con.id
-                                JOIN regions r ON con.region_id = r.id
-                                WHERE c.election_id = %s
-                                ORDER BY r.name, con.name""", (election_id,))
+            db.execute_query("SELECT DISTINCT c.constituency_id, con.name as const_name, r.name as region_name FROM candidates c JOIN constituencies con ON c.constituency_id = con.id JOIN regions r ON con.region_id = r.id WHERE c.election_id = %s ORDER BY r.name, con.name", (election_id,))
             constituencies = db.fetch_all()
 
-            results_by_constituency = {}
+            results_by_constituency: dict = {}
             for const_id, const_name, region_name in constituencies:
-                db.execute_query("""SELECT v.candidate_id, c.name, p.name as party, COUNT(*) as cnt
-                                    FROM votes v
-                                    JOIN candidates c ON v.candidate_id = c.id
-                                    LEFT JOIN parties p ON c.party_id = p.id
-                                    WHERE v.election_id = %s AND c.constituency_id = %s
-                                    GROUP BY v.candidate_id, c.name, p.name
-                                    ORDER BY cnt DESC""", (election_id, const_id))
+                db.execute_query("SELECT v.candidate_id, c.name, p.name as party, COUNT(*) as cnt FROM votes v JOIN candidates c ON v.candidate_id = c.id LEFT JOIN parties p ON c.party_id = p.id WHERE v.election_id = %s AND c.constituency_id = %s GROUP BY v.candidate_id, c.name, p.name ORDER BY cnt DESC", (election_id, const_id))
                 cand_results = db.fetch_all()
                 results_by_constituency[const_id] = {
                     'name': const_name,
@@ -59,50 +40,40 @@ def collate_mp_results(election_id):
         return {}
 
 
-def collate_regional_results(election_id):
-    """Aggregate total MP votes cast per region."""
+def collate_regional_results(election_id: int) -> list[tuple]:
     try:
         with DatabaseManager() as db:
-            db.execute_query("""SELECT r.id, r.name, COUNT(*) as total
-                                FROM votes v
-                                JOIN candidates c ON v.candidate_id = c.id
-                                JOIN constituencies con ON c.constituency_id = con.id
-                                JOIN regions r ON con.region_id = r.id
-                                WHERE v.election_id = %s AND c.constituency_id IS NOT NULL
-                                GROUP BY r.id, r.name
-                                ORDER BY r.name""", (election_id,))
+            db.execute_query("SELECT r.id, r.name, COUNT(*) as total FROM votes v JOIN candidates c ON v.candidate_id = c.id JOIN constituencies con ON c.constituency_id = con.id JOIN regions r ON con.region_id = r.id WHERE v.election_id = %s AND c.constituency_id IS NOT NULL GROUP BY r.id, r.name ORDER BY r.name", (election_id,))
             return db.fetch_all()
     except Exception as e:
         print(f"Error collating regional results: {e}")
         return []
 
 
-def format_form_1a(election_id, results):
-    """Print presidential results in EC Ghana Form 1A format and determine if a runoff is needed."""
+def format_form_1a(election_id: int, results: dict) -> None:
     print("\n" + "=" * 60)
     print("            EC GHANA FORM 1A - PRESIDENTIAL RESULTS")
     print("=" * 60)
     print(f"{'Candidate':<25} {'Party':<15} {'Votes':<10} {'%':<8}")
     print("-" * 60)
     for row in results['results']:
-        cand_id, name, party, count = row
+        name, party, count = row[1], row[2], row[3]
         pct = round((count / results['total'] * 100), 1) if results['total'] > 0 else 0
         print(f"{name:<25} {party or 'IND':<15} {count:<10} {pct:<8}%")
     print("-" * 60)
     print(f"{'Total Valid Votes':<40} {results['total']:<10}")
     print("=" * 60)
 
-    if check_50_percent_plus_one(results['total'], results['results'][0][3] if results['results'] else 0):
+    if results['results'] and check_50_percent_plus_one(results['total'], results['results'][0][3]):
         winner = results['results'][0][1]
         party = results['results'][0][2] or ""
         print(f"\nWINNER: {winner} ({party}) - 50%+1 threshold achieved")
-    else:
+    elif len(results['results']) >= 2:
         print(f"\nNO WINNER: Runoff required")
         print(f"Top two: {results['results'][0][1]} vs {results['results'][1][1]}")
 
 
-def format_form_1c(constituency_name, results, region_name=""):
-    """Print MP results for a single constituency in EC Ghana Form 1C format."""
+def format_form_1c(constituency_name: str, results: list[tuple], region_name: str = "") -> None:
     print("\n" + "-" * 60)
     print(f"     EC GHANA FORM 1C - PARLIAMENTARY: {constituency_name}")
     if region_name:
@@ -112,7 +83,7 @@ def format_form_1c(constituency_name, results, region_name=""):
     print("-" * 60)
     total = 0
     for row in results:
-        cand_id, name, party, count = row
+        name, party, count = row[1], row[2], row[3]
         total += count
         print(f"{name:<25} {party or 'IND':<15} {count:<10}")
     print("-" * 60)
@@ -120,13 +91,10 @@ def format_form_1c(constituency_name, results, region_name=""):
     print("-" * 60)
 
 
-def display_results():
-    """Display formatted election results for all completed elections (president and MP)."""
+def display_results() -> None:
     try:
         with DatabaseManager() as db:
-            db.execute_query("""SELECT id, title, position, phase
-                                FROM elections WHERE phase IN ('results', 'closed')
-                                ORDER BY id""")
+            db.execute_query("SELECT id, title, position, phase FROM elections WHERE phase IN ('results', 'closed') ORDER BY id")
             elections = db.fetch_all()
 
             if not elections:
@@ -142,20 +110,16 @@ def display_results():
                 if position == 'president':
                     pres_results = collate_presidential_results(eid)
                     format_form_1a(eid, pres_results)
-
                     if needs_runoff(eid):
                         print("\n*** PRESIDENTIAL RUNOFF REQUIRED ***")
                         print("No candidate achieved the constitutional 50%+1 threshold.")
-
-                    log_action('results_viewed', 'elections', eid, f"Presidential results displayed")
+                    log_action('results_viewed', 'elections', eid, "Presidential results displayed")
 
                 elif position == 'mp':
                     mp_results = collate_mp_results(eid)
                     regional = collate_regional_results(eid)
-
                     for const_id, data in mp_results.items():
                         format_form_1c(data['name'], data['results'], data['region'])
-
                     if regional:
                         print("\n" + "=" * 60)
                         print("  REGIONAL SUMMARY")
@@ -164,7 +128,6 @@ def display_results():
                         print("-" * 32)
                         for r in regional:
                             print(f"{r[1]:<20} {r[2]:<12}")
-
                     log_action('results_viewed', 'elections', eid, "MP results displayed")
 
     except Exception as err:

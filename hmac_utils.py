@@ -1,28 +1,33 @@
 import hmac
 import hashlib
 import os
-import string
-import random
+import secrets
 
-HMAC_KEY = os.getenv('HMAC_SECRET_KEY', 'default-vote-integrity-key-change-in-production')
+from config import Config
+
+HMAC_KEY = None
 
 
-def compute_vote_hmac(voter_id, candidate_id, election_id, timestamp):
-    """Generate an HMAC-SHA256 hash to ensure vote data integrity."""
+def _get_hmac_key() -> str:
+    global HMAC_KEY
+    if HMAC_KEY is None:
+        HMAC_KEY = os.getenv('HMAC_SECRET_KEY') or Config.get_hmac_key()
+    return HMAC_KEY
+
+
+def compute_vote_hmac(voter_id: int | str, candidate_id: int, election_id: int, timestamp: str) -> str:
     msg = f"{voter_id}:{candidate_id}:{election_id}:{timestamp}"
     return hmac.new(
-        HMAC_KEY.encode('utf-8'),
+        _get_hmac_key().encode('utf-8'),
         msg.encode('utf-8'),
         hashlib.sha256
     ).hexdigest()
 
 
-def verify_vote_hmac(voter_id, candidate_id, election_id, timestamp, received_hmac):
-    """Verify a vote's HMAC against the expected value using constant-time comparison."""
+def verify_vote_hmac(voter_id: int | str, candidate_id: int, election_id: int, timestamp: str, received_hmac: str) -> bool:
     expected = compute_vote_hmac(voter_id, candidate_id, election_id, timestamp)
     return hmac.compare_digest(expected, received_hmac)
 
 
-def generate_ballot_paper_id():
-    """Generate a unique ballot paper ID prefixed with BALLOT-."""
-    return "BALLOT-" + ''.join(random.choices(string.ascii_uppercase + string.digits, k=12))
+def generate_ballot_paper_id() -> str:
+    return "BALLOT-" + secrets.token_hex(6).upper()

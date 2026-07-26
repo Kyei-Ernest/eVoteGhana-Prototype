@@ -1,5 +1,4 @@
-import random
-import string
+import secrets
 import getpass
 from datetime import datetime
 import bcrypt
@@ -11,9 +10,9 @@ from audit_log import log_action
 
 
 class RegisterVoter:
-    """Handle voter registration, validation, and database insertion."""
-    def __init__(self, voter_id, name, contact, email, date_of_birth, personal_id, occupation,
-                 constituency_id, polling_station_id, password, conf_pass):
+    def __init__(self, voter_id: str, name: str, contact: str, email: str, date_of_birth: str,
+                 personal_id: str, occupation: str, constituency_id: int, polling_station_id: int,
+                 password: str, conf_pass: str):
         self.id = voter_id
         self.name = name
         self.date_of_birth = date_of_birth
@@ -27,8 +26,7 @@ class RegisterVoter:
         self.conf_pass = conf_pass
         self.legal_age = 0
 
-    def calculate_age(self):
-        """Parse date of birth and compute legal age."""
+    def calculate_age(self) -> int:
         try:
             day, month, year = map(int, self.date_of_birth.split("/"))
             then = datetime(year=year, month=month, day=day)
@@ -38,26 +36,17 @@ class RegisterVoter:
             print(f"Error calculating age: {e}")
             return -1
 
-    def full_info(self):
-        """Insert voter record and hashed password into the database."""
+    def full_info(self) -> bool:
         try:
             hashed_password = RegisterVoter.create_hashed_password(self.password)
             python_date = datetime.strptime(self.date_of_birth, '%d/%m/%Y')
             mysql_date = python_date.strftime('%Y-%m-%d')
 
             with DatabaseManager() as db:
-                sql = """INSERT INTO voterinfo(voter_id, name, contact, email, date_of_birth, personal_id,
-                         occupation, constituency_id, polling_station_id, voted)
-                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
-                db.execute_query(sql, (self.id, self.name, self.contact, self.email, mysql_date,
-                                       self.personal_id, self.occupation, self.constituency_id,
-                                       self.polling_station_id, 0))
+                db.execute_query("INSERT INTO voterinfo(voter_id, name, contact, email, date_of_birth, personal_id, occupation, constituency_id, polling_station_id, voted) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)", (self.id, self.name, self.contact, self.email, mysql_date, self.personal_id, self.occupation, self.constituency_id, self.polling_station_id, 0))
+                db.execute_query("INSERT INTO pass_table(voter_id, password) VALUES (%s, %s)", (self.id, hashed_password))
 
-                sql_1 = "INSERT INTO pass_table(voter_id, password) VALUES (%s, %s)"
-                db.execute_query(sql_1, (self.id, hashed_password))
-
-            log_action('voter_registered', 'voterinfo', self.id,
-                       f"Name: {self.name}, Constituency: {self.constituency_id}")
+            log_action('voter_registered', 'voterinfo', self.id, f"Name: {self.name}, Constituency: {self.constituency_id}")
             print(f"Voter {self.name} registered successfully.")
             return True
         except ValueError as e:
@@ -68,84 +57,70 @@ class RegisterVoter:
             return False
 
     @staticmethod
-    def create_hashed_password(password):
-        """Generate a bcrypt hash for the given password."""
+    def create_hashed_password(password: str) -> bytes:
         salt = bcrypt.gensalt()
         return bcrypt.hashpw(password.encode('utf-8'), salt)
 
-    def verification(self):
-        """Validate all voter fields and retry on failure, then register if valid."""
+    def verification(self) -> bool:
+        import validation as v
+
         try:
-            self.calculate_age()
+            while True:
+                self.calculate_age()
 
-            id_exists = vc.check_value_exists('voterinfo', 'voter_id', self.id)
-            const_exists = vc.check_value_exists('constituencies', 'id', self.constituency_id)
-            ps_exists = vc.check_value_exists('polling_stations', 'id', self.polling_station_id)
+                id_exists = vc.check_value_exists('voterinfo', 'voter_id', self.id)
+                const_exists = vc.check_value_exists('constituencies', 'id', self.constituency_id)
+                ps_exists = vc.check_value_exists('polling_stations', 'id', self.polling_station_id)
 
-            if id_exists:
-                print("Sorry, this ID already exists for another voter")
-                # Generate a new random ID and retry verification
-                id_list = random.choices(string.ascii_uppercase + string.digits, k=8)
-                self.id = "".join(id_list)
-                return self.verification()
-            elif self.legal_age < 18:
-                print("You are not eligible for voting")
-                return False
-            elif not self.name or isinstance(self.name, int):
-                print('Must enter a valid name')
-                self.name = input("Name: ")
-                return self.verification()
-            elif not self.date_of_birth:
-                print('Date of birth required')
-                self.date_of_birth = input("Date of birth (DD/MM/YYYY): ")
-                return self.verification()
-            elif not self.occupation:
-                print('Occupation required')
-                self.occupation = input("Occupation: ")
-                return self.verification()
-            elif not self.contact or len(self.contact) != 10:
-                print("Contact must be exactly 10 digits")
-                self.contact = input("Contact: ")
-                return self.verification()
-            elif not const_exists:
-                print('Constituency does not exist')
-                return False
-            elif not ps_exists:
-                print('Polling station does not exist')
-                return False
-            elif self.password != self.conf_pass:
-                print('The passwords you entered do not match')
-                self.password = getpass.getpass('Password: ')
-                self.conf_pass = getpass.getpass('Confirm Password: ')
-                return self.verification()
-            elif len(self.password) < 10 or len(self.conf_pass) < 10:
-                print('Password must be at least 10 characters.')
-                self.password = getpass.getpass('Password: ')
-                self.conf_pass = getpass.getpass('Confirm Password: ')
-                return self.verification()
-            elif not any(c.isupper() for c in self.password):
-                print('Password must contain at least one uppercase letter.')
-                self.password = getpass.getpass('Password: ')
-                self.conf_pass = getpass.getpass('Confirm Password: ')
-                return self.verification()
-            elif not any(c.islower() for c in self.password):
-                print('Password must contain at least one lowercase letter.')
-                self.password = getpass.getpass('Password: ')
-                self.conf_pass = getpass.getpass('Confirm Password: ')
-                return self.verification()
-            elif not any(c.isdigit() for c in self.password):
-                print('Password must contain at least one digit.')
-                self.password = getpass.getpass('Password: ')
-                self.conf_pass = getpass.getpass('Confirm Password: ')
-                return self.verification()
-            elif not any(c in '!@#$%^&*()-_=+[]{}|;:,.<>?/~`' for c in self.password):
-                print('Password must contain at least one special character.')
-                self.password = getpass.getpass('Password: ')
-                self.conf_pass = getpass.getpass('Confirm Password: ')
-                return self.verification()
-            else:
+                if id_exists:
+                    print("Sorry, this ID already exists for another voter")
+                    self.id = secrets.token_hex(4).upper()
+                    continue
+                if self.legal_age < 18:
+                    print("You are not eligible for voting")
+                    return False
+                if not self.name or isinstance(self.name, int):
+                    print('Must enter a valid name')
+                    self.name = input("Name: ")
+                    continue
+                if not self.date_of_birth:
+                    print('Date of birth required')
+                    self.date_of_birth = input("Date of birth (DD/MM/YYYY): ")
+                    continue
+                if not self.occupation:
+                    print('Occupation required')
+                    self.occupation = input("Occupation: ")
+                    continue
+                if not self.contact or not v.is_valid_contact(self.contact):
+                    print("Contact must be a valid 10-digit Ghanaian number starting with 0")
+                    self.contact = input("Contact: ")
+                    continue
+                if self.email and not v.is_valid_email(self.email):
+                    print("Invalid email format")
+                    self.email = input("Email: ")
+                    continue
+                if self.personal_id and not v.is_valid_ghana_card(self.personal_id):
+                    print("Ghana Card ID must match format GHA-XXXXXXXXXX (10 alphanumeric)")
+                    self.personal_id = input("Personal ID: ")
+                    continue
+                if not const_exists:
+                    print('Constituency does not exist')
+                    return False
+                if not ps_exists:
+                    print('Polling station does not exist')
+                    return False
+                if self.password != self.conf_pass:
+                    print('The passwords you entered do not match')
+                    self.password = getpass.getpass('Password: ')
+                    self.conf_pass = getpass.getpass('Confirm Password: ')
+                    continue
+                valid_pw, pw_msg = v.validate_password_strength(self.password)
+                if not valid_pw:
+                    print(pw_msg)
+                    self.password = getpass.getpass('Password: ')
+                    self.conf_pass = getpass.getpass('Confirm Password: ')
+                    continue
                 return self.full_info()
-
         except Exception as err:
             print(f"Database error: {err}")
             return False
@@ -440,9 +415,7 @@ def start_voter_registration_process():
 Enter your choice: """)
 
         if choice == "1":
-            # Generate a random 8-character voter ID
-            id_list = random.choices(string.ascii_uppercase + string.digits, k=8)
-            ID = "".join(id_list)
+            ID = secrets.token_hex(4).upper()
             name = input('Full Name: ')
             dob = input('Date of birth (DD/MM/YYYY): ')
             contact = input('Contact: ')

@@ -1,12 +1,11 @@
 from database import DatabaseManager
-from datetime import date, datetime
+from datetime import date
 
 
-PHASES = ['nomination', 'campaigning', 'voting', 'results', 'closed']
+PHASES: list[str] = ['nomination', 'campaigning', 'voting', 'results', 'closed']
 
 
-def get_current_phase(election_id):
-    """Return the current phase of an election, auto-transitioning if the end date has passed."""
+def get_current_phase(election_id: int) -> str | None:
     try:
         with DatabaseManager() as db:
             db.execute_query("SELECT phase, start_date, end_date FROM elections WHERE id = %s", (election_id,))
@@ -17,7 +16,6 @@ def get_current_phase(election_id):
             today = date.today()
             if start_date and today < start_date:
                 return 'scheduled'
-            # Auto-transition to results if voting period has ended
             if end_date and today > end_date and phase == 'voting':
                 auto_transition(election_id, 'results')
                 return 'results'
@@ -27,8 +25,7 @@ def get_current_phase(election_id):
         return None
 
 
-def transition_phase(election_id, new_phase):
-    """Transition an election to a new phase, enforcing forward-only movement."""
+def transition_phase(election_id: int, new_phase: str) -> bool:
     if new_phase not in PHASES:
         print(f"Invalid phase: {new_phase}")
         return False
@@ -40,7 +37,6 @@ def transition_phase(election_id, new_phase):
                 return False
             current_idx = PHASES.index(current) if current in PHASES else -1
             new_idx = PHASES.index(new_phase)
-            # Allow backward transition only when moving to 'closed'
             if new_idx <= current_idx and new_phase != 'closed':
                 print(f"Cannot transition from {current} to {new_phase}.")
                 return False
@@ -54,8 +50,7 @@ def transition_phase(election_id, new_phase):
         return False
 
 
-def auto_transition(election_id, new_phase):
-    """Silently update an election's phase without audit logging."""
+def auto_transition(election_id: int, new_phase: str) -> None:
     try:
         with DatabaseManager() as db:
             db.execute_query("UPDATE elections SET phase = %s WHERE id = %s", (new_phase, election_id))
@@ -63,8 +58,7 @@ def auto_transition(election_id, new_phase):
         pass
 
 
-def require_phase(election_id, required_phase):
-    """Check that an election is in the required phase, printing a message if not."""
+def require_phase(election_id: int, required_phase: str) -> bool:
     current = get_current_phase(election_id)
     if current != required_phase:
         print(f"This action requires the '{required_phase}' phase. Current phase: {current}")
@@ -72,8 +66,7 @@ def require_phase(election_id, required_phase):
     return True
 
 
-def get_active_elections():
-    """Return all elections that have not been closed."""
+def get_active_elections() -> list[tuple]:
     try:
         with DatabaseManager() as db:
             db.execute_query("SELECT id, title, position, phase FROM elections WHERE phase != 'closed'")
@@ -83,30 +76,20 @@ def get_active_elections():
         return []
 
 
-def check_50_percent_plus_one(total_votes, candidate_votes):
-    """Return True if candidate_votes exceeds half of total_votes."""
+def check_50_percent_plus_one(total_votes: int, candidate_votes: int) -> bool:
     if total_votes == 0:
         return False
-    threshold = total_votes / 2
-    return candidate_votes > threshold
+    return candidate_votes > total_votes / 2
 
 
-def needs_runoff(election_id):
-    """Determine whether a presidential election requires a runoff (no candidate achieved 50%+1)."""
+def needs_runoff(election_id: int) -> bool:
     try:
         with DatabaseManager() as db:
-            db.execute_query("""SELECT COUNT(*) FROM votes v
-                                JOIN candidates c ON v.candidate_id = c.id
-                                WHERE v.election_id = %s AND c.constituency_id IS NULL""",
-                             (election_id,))
+            db.execute_query("SELECT COUNT(*) FROM votes v JOIN candidates c ON v.candidate_id = c.id WHERE v.election_id = %s AND c.constituency_id IS NULL", (election_id,))
             total = db.fetch_one()[0]
             if total == 0:
                 return False
-            db.execute_query("""SELECT v.candidate_id, COUNT(*) as cnt FROM votes v
-                                JOIN candidates c ON v.candidate_id = c.id
-                                WHERE v.election_id = %s AND c.constituency_id IS NULL
-                                GROUP BY v.candidate_id ORDER BY cnt DESC LIMIT 1""",
-                             (election_id,))
+            db.execute_query("SELECT v.candidate_id, COUNT(*) as cnt FROM votes v JOIN candidates c ON v.candidate_id = c.id WHERE v.election_id = %s AND c.constituency_id IS NULL GROUP BY v.candidate_id ORDER BY cnt DESC LIMIT 1", (election_id,))
             top = db.fetch_one()
             if not top:
                 return False

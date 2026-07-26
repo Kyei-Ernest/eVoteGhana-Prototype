@@ -6,8 +6,7 @@ from i18n import _
 from admin_auth import validate_config, require_admin, logout_admin, is_admin_logged_in
 
 
-def main_menu():
-    """Display the main navigation menu and route user choices to the appropriate module."""
+def main_menu() -> None:
     validate_config()
 
     while True:
@@ -55,8 +54,7 @@ def main_menu():
             print(_('invalid_choice'))
 
 
-def registration_menu():
-    """Show the registration submenu for admin setup or voter registration."""
+def registration_menu() -> None:
     while True:
         print(f"\n{_('reg_menu')}")
         print(_('admin_setup'))
@@ -75,20 +73,17 @@ def registration_menu():
             print(_('invalid_choice'))
 
 
-def voting_menu():
-    """Launch the voting interface."""
+def voting_menu() -> None:
     print(f"\n{_('voting_section')}")
     voting.display_poll()
 
 
-def results_menu():
-    """Launch the results display interface."""
+def results_menu() -> None:
     print(f"\n{_('results_section')}")
     results_processing.display_results()
 
 
-def verify_vote_by_ballot():
-    """Look up and display vote details by a ballot paper ID."""
+def verify_vote_by_ballot() -> None:
     ballot_id = input("Enter Ballot Paper ID (e.g., BALLOT-XXXX): ").strip()
     if not ballot_id:
         print("No ID entered.")
@@ -96,14 +91,7 @@ def verify_vote_by_ballot():
     try:
         from database import DatabaseManager
         with DatabaseManager() as db:
-            db.execute_query("""SELECT v.ballot_paper_id, v.created_at, c.name as candidate,
-                                p.name as party, e.title as election, c2.name as constituency
-                                FROM votes v
-                                JOIN candidates c ON v.candidate_id = c.id
-                                LEFT JOIN parties p ON c.party_id = p.id
-                                LEFT JOIN constituencies c2 ON c.constituency_id = c2.id
-                                JOIN elections e ON v.election_id = e.id
-                                WHERE v.ballot_paper_id = %s""", (ballot_id,))
+            db.execute_query("SELECT v.ballot_paper_id, v.created_at, c.name as candidate, p.name as party, e.title as election, c2.name as constituency FROM votes v JOIN candidates c ON v.candidate_id = c.id LEFT JOIN parties p ON c.party_id = p.id LEFT JOIN constituencies c2 ON c.constituency_id = c2.id JOIN elections e ON v.election_id = e.id WHERE v.ballot_paper_id = %s", (ballot_id,))
             row = db.fetch_one()
             if row:
                 print("\n=== VOTE VERIFICATION ===")
@@ -121,8 +109,7 @@ def verify_vote_by_ballot():
         print(f"Error verifying vote: {e}")
 
 
-def view_audit_trail():
-    """Display the last 50 entries from the audit log."""
+def view_audit_trail() -> None:
     from audit_log import get_audit_trail
     logs = get_audit_trail(limit=50)
     if not logs:
@@ -136,8 +123,7 @@ def view_audit_trail():
               f"{str(row[3] or ''):<15} {str(row[4] or ''):<15} {str(row[6]):<22}")
 
 
-def backup_restore_menu():
-    """Show a submenu for database backup and restore operations."""
+def backup_restore_menu() -> None:
     from backup_restore import backup_database, restore_database
     print("\n1. Backup database")
     print("2. Restore database")
