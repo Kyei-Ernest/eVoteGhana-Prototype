@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}eVoteGhana{% endblock %}</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <div class="brand"><a href="/">eVoteGhana</a></div>
+  <nav>
+    <a href="/">Home</a>
+    <a href="/register">Register</a>
+    <a href="/vote">Vote</a>
+    <a href="/verify">Verify Ballot</a>
+    <a href="/results">Results</a>
+    {% if admin %}
+      <a href="/admin">Admin</a>
+    {% else %}
+      <a href="/admin/login">Admin Login</a>
+    {% endif %}
+  </nav>
+</header>
+<main>
+{% if flash %}
+  <div class="flashes">
+    {% for f in flash %}
+      <div class="flash flash-{{ f.kind }}">{{ f.message }}</div>
+    {% endfor %}
+  </div>
+{% endif %}
+{% block content %}{% endblock %}
+</main>
+<footer>eVoteGhana &mdash; electronic voting system for the Ghanaian electoral context</footer>
+</body>
+</html>

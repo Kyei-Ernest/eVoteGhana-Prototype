@@ -1,0 +1,16 @@
+# eVoteGhana — Caddy reverse proxy with automatic HTTPS.
+#
+# Point your domain's DNS A/AAAA record at this server, then set DOMAIN in .env.
+# For local testing use DOMAIN=localhost (Caddy will use its internal CA).
+
+{$DOMAIN:vote.example.com} {
+	reverse_proxy web:8000
+	encode gzip zstd
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy same-origin
+	}
+}

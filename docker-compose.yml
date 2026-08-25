@@ -1,15 +1,11 @@
-version: '3.8'
-
 services:
   db:
     image: mysql:8.0
     container_name: evote_mysql
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: admin123
-      MYSQL_DATABASE: mydb
-    ports:
-      - "3306:3306"
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env (copy .env.example)}
+      MYSQL_DATABASE: ${DB_NAME_MAIN:-mydb}
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
@@ -18,9 +14,9 @@ services:
       timeout: 5s
       retries: 5
 
-  app:
+  web:
     build: .
-    container_name: evote_app
+    container_name: evote_web
     restart: unless-stopped
     depends_on:
       db:
@@ -28,14 +24,63 @@ services:
     environment:
       DB_HOST: db
       DB_USER: root
-      DB_PASSWORD: admin123
-      DB_NAME_MAIN: mydb
-      DB_NAME_IDENTITY: gg
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME_MAIN: ${DB_NAME_MAIN:-mydb}
+      DB_NAME_IDENTITY: ${DB_NAME_IDENTITY:-gg}
       DB_PORT: 3306
-      HMAC_SECRET_KEY: change-this-to-a-secure-random-key-in-production
-      LANGUAGE: en
-    stdin_open: true
-    tty: true
+      HMAC_SECRET_KEY: ${HMAC_SECRET_KEY:?Set HMAC_SECRET_KEY in .env}
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
+      LANGUAGE: ${LANGUAGE:-en}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      SESSION_MAX_AGE: ${SESSION_MAX_AGE:-1800}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # Retry first-run schema setup while MySQL finishes booting
+      DB_CONNECT_RETRIES: ${DB_CONNECT_RETRIES:-60}
+      DB_CONNECT_RETRY_DELAY: ${DB_CONNECT_RETRY_DELAY:-2}
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: evote_caddy
+    restart: unless-stopped
+    depends_on:
+      - web
+    environment:
+      DOMAIN: ${DOMAIN:-vote.example.com}
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  backup:
+    build: ./backup
+    container_name: evote_backup
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST: db
+      DB_USER: root
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME_MAIN: ${DB_NAME_MAIN:-mydb}
+      DB_PORT: 3306
+    volumes:
+      - backup_data:/backups
 
 volumes:
   mysql_data:
+  caddy_data:
+  caddy_config:
+  backup_data:

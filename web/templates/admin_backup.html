@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Backup — eVoteGhana Admin{% endblock %}
+{% block content %}
+<section class="narrow">
+  <h1>Backup &amp; Restore</h1>
+  <p><a href="/admin">&larr; Back to dashboard</a></p>
+  <div class="card">
+    <h2>Backup now</h2>
+    <p>Create a <code>mysqldump</code> of the main database into the <code>backups/</code> directory.</p>
+    <form method="post" action="/admin/backup">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="btn" type="submit">Create backup</button>
+    </form>
+  </div>
+  <div class="card">
+    <h2>Scheduled backups</h2>
+    <p>In the Docker deployment, a dedicated backup container dumps the database every hour and
+       prunes files older than 7 days. Restores are performed with the MySQL client from a
+       <code>.sql</code> file &mdash; see <code>backup_restore.py</code>.</p>
+  </div>
+</section>
+{% endblock %}

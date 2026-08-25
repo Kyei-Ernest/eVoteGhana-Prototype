@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Voter Login — eVoteGhana{% endblock %}
+{% block content %}
+<section class="narrow">
+  <h1>Voter Login</h1>
+  <p class="lead">Enter the Voter ID and password you received at registration.</p>
+  <form method="post" action="/vote/login">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label for="voter_id">Voter ID</label>
+    <input id="voter_id" name="voter_id" required autocomplete="username">
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" required autocomplete="current-password">
+    <button class="btn" type="submit">Log in</button>
+  </form>
+  <p class="muted">Don't have a Voter ID yet? <a href="/register">Register as a voter</a>.</p>
+</section>
+{% endblock %}

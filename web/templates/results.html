@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Election Results — eVoteGhana{% endblock %}
+{% block content %}
+<section>
+  <h1>Election Results</h1>
+
+  {% if not elections %}
+    <p class="muted">No completed elections yet. Results appear once an election moves to the <strong>results</strong> or <strong>closed</strong> phase.</p>
+  {% endif %}
+
+  {% for e in elections %}
+    <div class="result-block">
+      <h2>{{ e.title }} <span class="tag">{{ e.position }} — {{ e.phase }}</span></h2>
+
+      <p class="muted">
+        Turnout: {{ e.turnout.cast }} of {{ e.turnout.registered }} registered voters ({{ e.turnout.turnout_pct }}%)
+      </p>
+
+      {% if e.position == 'president' %}
+        <h3>EC Ghana Form 1A — Presidential Results</h3>
+        <table>
+          <thead><tr><th>Candidate</th><th>Party</th><th class="num">Votes</th><th class="num">%</th></tr></thead>
+          <tbody>
+            {% for row in e.rows %}
+              <tr><td>{{ row[1] }}</td><td>{{ row[2] or 'IND' }}</td><td class="num">{{ row[3] }}</td>
+                  <td class="num">{{ (row[3] / e.total * 100) | round(1) if e.total > 0 else 0 }}%</td></tr>
+            {% endfor %}
+          </tbody>
+          <tfoot><tr><td colspan="2">Total Valid Votes</td><td class="num">{{ e.total }}</td><td></td></tr></tfoot>
+        </table>
+        {% if e.winner %}
+          <p class="winner">WINNER: {{ e.winner }} — 50%+1 threshold achieved.</p>
+        {% elif e.runoff %}
+          <p class="runoff">NO WINNER: Runoff required — no candidate achieved the constitutional 50%+1 threshold.</p>
+        {% endif %}
+
+      {% else %}
+        <h3>EC Ghana Form 1C — Parliamentary Results</h3>
+        {% for const in e.constituencies %}
+          <div class="constituency">
+            <h4>{{ const.name }} <span class="muted">({{ const.region }})</span></h4>
+            <table>
+              <thead><tr><th>Candidate</th><th>Party</th><th class="num">Votes</th></tr></thead>
+              <tbody>
+                {% set ns = namespace(total=0) %}
+                {% for row in const.results %}
+                  {% set ns.total = ns.total + row[3] %}
+                  <tr><td>{{ row[1] }}</td><td>{{ row[2] or 'IND' }}</td><td class="num">{{ row[3] }}</td></tr>
+                {% endfor %}
+              </tbody>
+              <tfoot><tr><td colspan="2">Total Valid Votes</td><td class="num">{{ ns.total }}</td></tr></tfoot>
+            </table>
+            {% if const.results %}
+              <p class="winner">Winner: {{ const.results[0][1] }} ({{ const.results[0][2] or 'Independent' }})</p>
+            {% endif %}
+          </div>
+        {% endfor %}
+
+        {% if e.regional %}
+          <h4>Regional Summary</h4>
+          <table>
+            <thead><tr><th>Region</th><th class="num">Votes Cast</th></tr></thead>
+            <tbody>
+              {% for r in e.regional %}
+                <tr><td>{{ r[1] }}</td><td class="num">{{ r[2] }}</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% endif %}
+      {% endif %}
+    </div>
+  {% endfor %}
+</section>
+{% endblock %}

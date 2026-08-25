@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Voters — eVoteGhana Admin{% endblock %}
+{% block content %}
+<section>
+  <h1>Registered Voters</h1>
+  <p><a href="/admin">&larr; Back to dashboard</a></p>
+  <table>
+    <thead><tr><th>Voter ID</th><th>Name</th><th>Ghana Card</th><th>Voted</th><th>Constituency</th><th>Polling Station</th></tr></thead>
+    <tbody>
+      {% for v in voters %}
+        <tr>
+          <td>{{ v[0] }}</td>
+          <td>{{ v[1] }}</td>
+          <td>{{ v[2] or '—' }}</td>
+          <td>{% if v[3] %}Yes{% else %}No{% endif %}</td>
+          <td>{{ v[4] or '—' }}</td>
+          <td>{{ v[5] or '—' }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

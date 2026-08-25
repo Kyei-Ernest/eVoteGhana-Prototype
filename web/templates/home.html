@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <h1>Ghana Voting System</h1>
+  <p class="lead">Register to vote, cast your ballot securely, and verify that your vote was counted.</p>
+</section>
+<section class="cards">
+  <div class="card">
+    <h2>Voter Registration</h2>
+    <p>Register as a voter with your Ghana Card. You will receive a Voter ID used to log in and vote.</p>
+    <a class="btn" href="/register">Register now</a>
+  </div>
+  <div class="card">
+    <h2>Cast Your Vote</h2>
+    <p>Log in with your Voter ID and password, then vote for MP and presidential candidates.</p>
+    <a class="btn" href="/vote">Vote now</a>
+  </div>
+  <div class="card">
+    <h2>Verify a Ballot</h2>
+    <p>Check that a ballot paper ID was actually recorded in the system.</p>
+    <a class="btn" href="/verify">Verify ballot</a>
+  </div>
+  <div class="card">
+    <h2>Election Results</h2>
+    <p>View collated results and EC Ghana Form 1A / 1C outputs for completed elections.</p>
+    <a class="btn" href="/results">View results</a>
+  </div>
+</section>
+{% endblock %}

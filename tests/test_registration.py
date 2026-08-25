@@ -1,7 +1,6 @@
-import sys
 import os
-import pytest
-from unittest.mock import patch, MagicMock
+import sys
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -9,24 +8,38 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 class TestRegisterVoter:
     def test_age_calculation(self):
         from Registration import RegisterVoter
+
         voter = RegisterVoter(
-            voter_id='TESTID', name='Test', contact='0241234567',
-            email='test@example.com', date_of_birth='15/03/2000',
-            personal_id='GHA-ABCD1234EF', occupation='Engineer',
-            constituency_id=1, polling_station_id=1,
-            password='ValidP@ss1', conf_pass='ValidP@ss1'
+            voter_id='TESTID',
+            name='Test',
+            contact='0241234567',
+            email='test@example.com',
+            date_of_birth='15/03/2000',
+            personal_id='GHA-ABCD1234EF',
+            occupation='Engineer',
+            constituency_id=1,
+            polling_station_id=1,
+            password='ValidP@ss1',
+            conf_pass='ValidP@ss1',
         )
         age_val = voter.calculate_age()
         assert age_val >= 24
 
     def test_underage_rejected(self):
         from Registration import RegisterVoter
+
         voter = RegisterVoter(
-            voter_id='TESTID', name='Test', contact='0241234567',
-            email='test@example.com', date_of_birth='15/03/2015',
-            personal_id='GHA-ABCD1234EF', occupation='Student',
-            constituency_id=1, polling_station_id=1,
-            password='ValidP@ss1', conf_pass='ValidP@ss1'
+            voter_id='TESTID',
+            name='Test',
+            contact='0241234567',
+            email='test@example.com',
+            date_of_birth='15/03/2015',
+            personal_id='GHA-ABCD1234EF',
+            occupation='Student',
+            constituency_id=1,
+            polling_station_id=1,
+            password='ValidP@ss1',
+            conf_pass='ValidP@ss1',
         )
         result = voter.verification()
         assert result is False
@@ -34,12 +47,19 @@ class TestRegisterVoter:
     @patch('Registration.vc.check_value_exists', return_value=True)
     def test_duplicate_id_regenerates(self, mock_check):
         from Registration import RegisterVoter
+
         voter = RegisterVoter(
-            voter_id='EXISTING', name='Test', contact='0241234567',
-            email='test@example.com', date_of_birth='15/03/2000',
-            personal_id='GHA-ABCD1234EF', occupation='Engineer',
-            constituency_id=1, polling_station_id=1,
-            password='ValidP@ss1', conf_pass='ValidP@ss1'
+            voter_id='EXISTING',
+            name='Test',
+            contact='0241234567',
+            email='test@example.com',
+            date_of_birth='15/03/2000',
+            personal_id='GHA-ABCD1234EF',
+            occupation='Engineer',
+            constituency_id=1,
+            polling_station_id=1,
+            password='ValidP@ss1',
+            conf_pass='ValidP@ss1',
         )
         original_id = voter.id
         with patch('Registration.vc.check_value_exists') as mock_exists:
@@ -56,12 +76,19 @@ class TestRegisterVoter:
     @patch('Registration.DatabaseManager')
     def test_successful_registration(self, mock_db, mock_check):
         from Registration import RegisterVoter
+
         voter = RegisterVoter(
-            voter_id='NEWVOTER', name='Test User', contact='0241234567',
-            email='test@example.com', date_of_birth='15/03/2000',
-            personal_id='GHA-ABCD1234EF', occupation='Engineer',
-            constituency_id=1, polling_station_id=1,
-            password='ValidP@ss1', conf_pass='ValidP@ss1'
+            voter_id='NEWVOTER',
+            name='Test User',
+            contact='0241234567',
+            email='test@example.com',
+            date_of_birth='15/03/2000',
+            personal_id='GHA-ABCD1234EF',
+            occupation='Engineer',
+            constituency_id=1,
+            polling_station_id=1,
+            password='ValidP@ss1',
+            conf_pass='ValidP@ss1',
         )
         mock_conn = MagicMock()
         mock_db.return_value.__enter__.return_value = mock_conn
@@ -73,6 +100,7 @@ class TestRegisterVoter:
 class TestRegistrationFunctions:
     def test_list_constituencies_empty(self):
         from Registration import list_constituencies
+
         with patch('Registration.DatabaseManager') as mock_db:
             mock_conn = MagicMock()
             mock_conn.fetch_all.return_value = []
@@ -82,6 +110,7 @@ class TestRegistrationFunctions:
 
     def test_list_polling_stations(self):
         from Registration import list_polling_stations
+
         with patch('Registration.DatabaseManager') as mock_db:
             mock_conn = MagicMock()
             mock_conn.fetch_all.return_value = [(1, 'Station A', 'SA-01', 'Constituency X')]

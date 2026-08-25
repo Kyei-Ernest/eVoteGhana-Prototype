@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Admin Login — eVoteGhana{% endblock %}
+{% block content %}
+<section class="narrow">
+  <h1>Admin Login</h1>
+  <p class="lead">Restricted area. Authorized election administrators only.</p>
+  <form method="post" action="/admin/login">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label for="username">Admin username</label>
+    <input id="username" name="username" required autocomplete="username">
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" required autocomplete="current-password">
+    <button class="btn" type="submit">Log in</button>
+  </form>
+</section>
+{% endblock %}

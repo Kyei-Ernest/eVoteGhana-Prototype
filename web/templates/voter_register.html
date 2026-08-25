@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Voter Registration — eVoteGhana{% endblock %}
+{% block content %}
+<section class="narrow">
+  <h1>Voter Registration</h1>
+  <p class="lead">All fields are required unless marked optional. You must be at least 18 years old.</p>
+  <form method="post" action="/register">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% set f = form or {} %}
+    <label for="name">Full name</label>
+    <input id="name" name="name" value="{{ f.get('name', '') }}" required>
+    {% if errors and errors.get('name') %}<p class="error">{{ errors['name'] }}</p>{% endif %}
+
+    <label for="date_of_birth">Date of birth (DD/MM/YYYY)</label>
+    <input id="date_of_birth" name="date_of_birth" value="{{ f.get('date_of_birth', '') }}" required placeholder="15/03/2000">
+    {% if errors and errors.get('date_of_birth') %}<p class="error">{{ errors['date_of_birth'] }}</p>{% endif %}
+
+    <label for="contact">Contact (10-digit Ghanaian number)</label>
+    <input id="contact" name="contact" value="{{ f.get('contact', '') }}" required placeholder="0241234567">
+    {% if errors and errors.get('contact') %}<p class="error">{{ errors['contact'] }}</p>{% endif %}
+
+    <label for="email">Email (optional)</label>
+    <input id="email" name="email" type="email" value="{{ f.get('email', '') }}">
+    {% if errors and errors.get('email') %}<p class="error">{{ errors['email'] }}</p>{% endif %}
+
+    <label for="personal_id">Ghana Card ID</label>
+    <input id="personal_id" name="personal_id" value="{{ f.get('personal_id', '') }}" placeholder="GHA-XXXXXXXXXX">
+    {% if errors and errors.get('personal_id') %}<p class="error">{{ errors['personal_id'] }}</p>{% endif %}
+
+    <label for="occupation">Occupation</label>
+    <input id="occupation" name="occupation" value="{{ f.get('occupation', '') }}" required>
+    {% if errors and errors.get('occupation') %}<p class="error">{{ errors['occupation'] }}</p>{% endif %}
+
+    <label for="constituency_id">Constituency</label>
+    <select id="constituency_id" name="constituency_id" required>
+      <option value="">Select a constituency</option>
+      {% for c in constituencies %}
+        <option value="{{ c[0] }}" {% if f.get('constituency_id') == c[0] %}selected{% endif %}>{{ c[1] }} ({{ c[2] }})</option>
+      {% endfor %}
+    </select>
+    {% if errors and errors.get('constituency_id') %}<p class="error">{{ errors['constituency_id'] }}</p>{% endif %}
+
+    <label for="polling_station_id">Polling station</label>
+    <select id="polling_station_id" name="polling_station_id" required>
+      <option value="">Select a polling station</option>
+      {% for s in stations %}
+        <option value="{{ s[0] }}" {% if f.get('polling_station_id') == s[0] %}selected{% endif %}>{{ s[1] }} ({{ s[2] }}) — {{ s[3] }}</option>
+      {% endfor %}
+    </select>
+    {% if errors and errors.get('polling_station_id') %}<p class="error">{{ errors['polling_station_id'] }}</p>{% endif %}
+
+    <label for="password">Password (min 10 chars, upper + lower + digit + special)</label>
+    <input id="password" name="password" type="password" required autocomplete="new-password">
+    <label for="confirm_password">Confirm password</label>
+    <input id="confirm_password" name="confirm_password" type="password" required autocomplete="new-password">
+    {% if errors and errors.get('password') %}<p class="error">{{ errors['password'] }}</p>{% endif %}
+
+    <button class="btn" type="submit">Register</button>
+  </form>
+</section>
+{% endblock %}

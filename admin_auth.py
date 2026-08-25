@@ -1,6 +1,6 @@
+import getpass
 import os
 import sys
-import getpass
 import time
 
 from rate_limiter import RateLimiter
@@ -35,22 +35,22 @@ def validate_config() -> bool:
     missing = []
     for var, desc in REQUIRED_ENV_VARS:
         if not os.getenv(var):
-            missing.append(f"  {var} ({desc})")
+            missing.append(f'  {var} ({desc})')
     if missing:
-        print("\n" + "=" * 60)
-        print("  eVoteGhana - First Time Setup Required")
-        print("=" * 60)
-        print("\nMissing environment variables:")
-        print("\n".join(missing))
-        print("\nTo get started:")
-        print("  1. Copy .env.example to .env:")
-        print("     cp .env.example .env")
-        print("  2. Edit .env with your MySQL credentials")
-        print("  3. Run the schema setup:")
-        print("     python3 schema.py")
-        print("  4. Start the application:")
-        print("     python3 main.py")
-        print("\nSee README.md for detailed instructions.")
+        print('\n' + '=' * 60)
+        print('  eVoteGhana - First Time Setup Required')
+        print('=' * 60)
+        print('\nMissing environment variables:')
+        print('\n'.join(missing))
+        print('\nTo get started:')
+        print('  1. Copy .env.example to .env:')
+        print('     cp .env.example .env')
+        print('  2. Edit .env with your MySQL credentials')
+        print('  3. Run the schema setup:')
+        print('     python3 schema.py')
+        print('  4. Start the application:')
+        print('     python3 main.py')
+        print('\nSee README.md for detailed instructions.')
         sys.exit(1)
 
     port = os.getenv('DB_PORT', '3306')
@@ -66,9 +66,9 @@ def validate_config() -> bool:
 
     hmac_key = os.getenv('HMAC_SECRET_KEY', '')
     if not hmac_key or hmac_key == 'change-this-to-a-secure-random-key-in-production':
-        print("WARNING: HMAC_SECRET_KEY is using the default value. Set a strong random key in production.")
+        print('WARNING: HMAC_SECRET_KEY is using the default value. Set a strong random key in production.')
 
-    print("Configuration validated.\n")
+    print('Configuration validated.\n')
     return True
 
 
@@ -77,35 +77,37 @@ def require_admin() -> bool:
         return True
 
     if AUTH_SESSION['logged_in'] and _session_expired():
-        print("Session expired. Please log in again.")
+        print('Session expired. Please log in again.')
         AUTH_SESSION['logged_in'] = False
 
-    print("\nAdmin authentication required.")
-    username = input("Admin username: ")
+    print('\nAdmin authentication required.')
+    username = input('Admin username: ')
 
     if not admin_auth_limiter.is_allowed(username):
-        print("Too many login attempts. Try again later.")
+        print('Too many login attempts. Try again later.')
         return False
 
-    from database import DatabaseManager
     import bcrypt
+
+    from database import DatabaseManager
+
     with DatabaseManager() as db:
-        db.execute_query("SELECT password_hash, role FROM admins WHERE username = %s", (username,))
+        db.execute_query('SELECT password_hash, role FROM admins WHERE username = %s', (username,))
         row = db.fetch_one()
         if not row:
-            print("Invalid credentials.")
+            print('Invalid credentials.')
             return False
         stored_hash, role = row
-        password = getpass.getpass("Admin password: ")
+        password = getpass.getpass('Admin password: ')
         if bcrypt.checkpw(password.encode('utf-8'), stored_hash.encode('utf-8')):
             AUTH_SESSION['logged_in'] = True
             AUTH_SESSION['username'] = username
             AUTH_SESSION['role'] = role
             AUTH_SESSION['login_time'] = time.time()
-            print(f"Logged in as {username} ({role}).")
+            print(f'Logged in as {username} ({role}).')
             return True
         else:
-            print("Invalid credentials.")
+            print('Invalid credentials.')
             return False
 
 
@@ -114,7 +116,7 @@ def logout_admin() -> None:
     AUTH_SESSION['username'] = None
     AUTH_SESSION['role'] = None
     AUTH_SESSION['login_time'] = 0.0
-    print("Logged out.")
+    print('Logged out.')
 
 
 def is_admin_logged_in() -> bool:

@@ -1,27 +1,28 @@
-import Registration
-import voting
-import results_processing
 import sys
+
+import Registration
+import results_processing
+import voting
+from admin_auth import is_admin_logged_in, logout_admin, require_admin, validate_config
 from i18n import _
-from admin_auth import validate_config, require_admin, logout_admin, is_admin_logged_in
 
 
 def main_menu() -> None:
     validate_config()
 
     while True:
-        status = " [ADMIN]" if is_admin_logged_in() else ""
-        print(f"\n{_('welcome')}{status}")
+        status = ' [ADMIN]' if is_admin_logged_in() else ''
+        print(f'\n{_("welcome")}{status}')
         print(_('reg_setup'))
         print(_('cast_vote'))
         print(_('view_results'))
-        print("5. Verify Vote by Ballot ID")
-        print("6. Audit Trail")
+        print('5. Verify Vote by Ballot ID')
+        print('6. Audit Trail')
         if is_admin_logged_in():
-            print("7. Backup / Restore")
-            print("8. Logout")
+            print('7. Backup / Restore')
+            print('8. Logout')
         else:
-            print("7. Admin Login")
+            print('7. Admin Login')
         print(_('exit'))
 
         choice = input(_('enter_choice'))
@@ -56,7 +57,7 @@ def main_menu() -> None:
 
 def registration_menu() -> None:
     while True:
-        print(f"\n{_('reg_menu')}")
+        print(f'\n{_("reg_menu")}')
         print(_('admin_setup'))
         print(_('voter_reg'))
         print(_('back'))
@@ -74,71 +75,89 @@ def registration_menu() -> None:
 
 
 def voting_menu() -> None:
-    print(f"\n{_('voting_section')}")
+    print(f'\n{_("voting_section")}')
     voting.display_poll()
 
 
 def results_menu() -> None:
-    print(f"\n{_('results_section')}")
+    print(f'\n{_("results_section")}')
     results_processing.display_results()
 
 
 def verify_vote_by_ballot() -> None:
-    ballot_id = input("Enter Ballot Paper ID (e.g., BALLOT-XXXX): ").strip()
+    ballot_id = input('Enter Ballot Paper ID (e.g., BALLOT-XXXX): ').strip()
     if not ballot_id:
-        print("No ID entered.")
+        print('No ID entered.')
         return
     try:
         from database import DatabaseManager
+        from hmac_utils import verify_vote_hmac
+
         with DatabaseManager() as db:
-            db.execute_query("SELECT v.ballot_paper_id, v.created_at, c.name as candidate, p.name as party, e.title as election, c2.name as constituency FROM votes v JOIN candidates c ON v.candidate_id = c.id LEFT JOIN parties p ON c.party_id = p.id LEFT JOIN constituencies c2 ON c.constituency_id = c2.id JOIN elections e ON v.election_id = e.id WHERE v.ballot_paper_id = %s", (ballot_id,))
+            db.execute_query(
+                'SELECT v.ballot_paper_id, v.created_at, c.name as candidate, p.name as party, '
+                'e.title as election, c2.name as constituency, v.voter_id, v.candidate_id, '
+                'v.election_id, v.hmac_hash FROM votes v '
+                'JOIN candidates c ON v.candidate_id = c.id LEFT JOIN parties p ON c.party_id = p.id '
+                'LEFT JOIN constituencies c2 ON c.constituency_id = c2.id JOIN elections e ON v.election_id = e.id '
+                'WHERE v.ballot_paper_id = %s',
+                (ballot_id,),
+            )
             row = db.fetch_one()
             if row:
-                print("\n=== VOTE VERIFICATION ===")
-                print(f"Ballot ID:    {row[0]}")
-                print(f"Timestamp:    {row[1]}")
-                print(f"Election:     {row[4]}")
-                print(f"Candidate:    {row[2]}")
-                print(f"Party:        {row[3] or 'Independent'}")
+                signature_ok = verify_vote_hmac(row[6], row[7], row[8], row[0], row[9])
+                print('\n=== VOTE VERIFICATION ===')
+                print(f'Ballot ID:    {row[0]}')
+                print(f'Timestamp:    {row[1]}')
+                print(f'Election:     {row[4]}')
+                print(f'Candidate:    {row[2]}')
+                print(f'Party:        {row[3] or "Independent"}')
                 if row[5]:
-                    print(f"Constituency: {row[5]}")
-                print("\nStatus: VERIFIED - This vote was recorded in the system.")
+                    print(f'Constituency: {row[5]}')
+                if signature_ok:
+                    print('\nStatus: INTEGRITY VERIFIED - HMAC signature matches the recorded vote.')
+                else:
+                    print('\nStatus: INTEGRITY FAILURE - signature mismatch; treat this record as tampered.')
             else:
-                print("\nBallot ID not found. Please check and try again.")
+                print('\nBallot ID not found. Please check and try again.')
     except Exception as e:
-        print(f"Error verifying vote: {e}")
+        print(f'Error verifying vote: {e}')
 
 
 def view_audit_trail() -> None:
     from audit_log import get_audit_trail
+
     logs = get_audit_trail(limit=50)
     if not logs:
-        print("No audit records found.")
+        print('No audit records found.')
         return
-    print("\n--- AUDIT TRAIL (Last 50 entries) ---")
-    print(f"{'ID':<5} {'Action':<20} {'Table':<20} {'Record':<15} {'Actor':<15} {'Timestamp':<22}")
-    print("-" * 97)
+    print('\n--- AUDIT TRAIL (Last 50 entries) ---')
+    print(f'{"ID":<5} {"Action":<20} {"Table":<20} {"Record":<15} {"Actor":<15} {"Timestamp":<22}')
+    print('-' * 97)
     for row in logs:
-        print(f"{row[0]:<5} {row[1]:<20} {str(row[2] or ''):<20} "
-              f"{str(row[3] or ''):<15} {str(row[4] or ''):<15} {str(row[6]):<22}")
+        print(
+            f'{row[0]:<5} {row[1]:<20} {str(row[2] or ""):<20} '
+            f'{str(row[3] or ""):<15} {str(row[4] or ""):<15} {str(row[6]):<22}'
+        )
 
 
 def backup_restore_menu() -> None:
     from backup_restore import backup_database, restore_database
-    print("\n1. Backup database")
-    print("2. Restore database")
-    sub = input("Choice: ")
+
+    print('\n1. Backup database')
+    print('2. Restore database')
+    sub = input('Choice: ')
     if sub == '1':
         backup_database()
     elif sub == '2':
         restore_database()
     else:
-        print("Invalid choice.")
+        print('Invalid choice.')
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     try:
         main_menu()
     except KeyboardInterrupt:
-        print("\nOperation cancelled by user.")
+        print('\nOperation cancelled by user.')
         sys.exit()

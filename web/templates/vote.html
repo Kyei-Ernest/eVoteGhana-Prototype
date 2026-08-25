@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Cast Your Vote — eVoteGhana{% endblock %}
+{% block content %}
+<section class="narrow">
+  <h1>Cast Your Vote</h1>
+  <p class="lead">Voter: <strong>{{ voter_id }}</strong></p>
+
+  {% if not ballots.mp and not ballots.president %}
+    <div class="notice">
+      <p>No ballots are currently open for you. This can happen when:</p>
+      <ul>
+        <li>no election is in the <strong>voting</strong> phase,</li>
+        <li>no candidates have been registered for your constituency, or</li>
+        <li>you have already cast this ballot.</li>
+      </ul>
+    </div>
+    <form method="post" action="/vote/logout">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="btn secondary" type="submit">Log out of voting</button>
+    </form>
+  {% endif %}
+
+  {% if ballots.mp %}
+    <div class="ballot">
+      <h2>MP Ballot</h2>
+      <p>Select your preferred Member of Parliament candidate. Verify with your Ghana Card ID.</p>
+      <form method="post" action="/vote/mp">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        {% for c in ballots.mp.candidates %}
+          <label class="candidate">
+            <input type="radio" name="candidate_id" value="{{ c[0] }}" required>
+            <span><strong>{{ c[1] }}</strong> — {{ c[2] or 'Independent' }}{% if c[3] %} ({{ c[3] }}){% endif %}</span>
+          </label>
+        {% endfor %}
+        <label for="personal_id_mp">Ghana Card (Personal ID) for verification</label>
+        <input id="personal_id_mp" name="personal_id" required placeholder="GHA-XXXXXXXXXX">
+        <button class="btn" type="submit">Cast MP ballot</button>
+      </form>
+    </div>
+  {% endif %}
+
+  {% if ballots.president %}
+    <div class="ballot">
+      <h2>Presidential Ballot</h2>
+      <p>Select your preferred presidential candidate. Verify with your Ghana Card ID.</p>
+      <form method="post" action="/vote/president">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        {% for c in ballots.president.candidates %}
+          <label class="candidate">
+            <input type="radio" name="candidate_id" value="{{ c[0] }}" required>
+            <span><strong>{{ c[1] }}</strong> — {{ c[2] or 'Independent' }}{% if c[3] %} ({{ c[3] }}){% endif %}</span>
+          </label>
+        {% endfor %}
+        <label for="personal_id_pres">Ghana Card (Personal ID) for verification</label>
+        <input id="personal_id_pres" name="personal_id" required placeholder="GHA-XXXXXXXXXX">
+        <button class="btn" type="submit">Cast presidential ballot</button>
+      </form>
+    </div>
+  {% endif %}
+</section>
+{% endblock %}

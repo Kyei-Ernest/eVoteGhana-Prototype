@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Vote Recorded — eVoteGhana{% endblock %}
+{% block content %}
+<section class="narrow">
+  <h1>Your Vote Has Been Recorded</h1>
+  <p class="lead">Thank you for voting, {{ voter_id }}. Keep your ballot paper IDs to verify your vote later.</p>
+  <div class="voter-id-box">
+    {% for b in ballots %}
+      <p>{{ b.position | title }} ballot paper ID:</p>
+      <p class="voter-id">{{ b.ballot_id }}</p>
+    {% endfor %}
+  </div>
+  <p>You can <a href="/verify">verify a ballot paper ID</a> at any time.</p>
+  <form method="post" action="/vote/logout">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="btn secondary" type="submit">Log out of voting</button>
+  </form>
+</section>
+{% endblock %}

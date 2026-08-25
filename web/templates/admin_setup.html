@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}Admin Setup — eVoteGhana{% endblock %}
+{% block content %}
+<section>
+  <h1>Administrative Setup</h1>
+  <p class="lead">Manage regions, constituencies, polling stations, parties, and candidates.</p>
+  <p><a href="/admin">&larr; Back to dashboard</a></p>
+
+  <h2>Regions</h2>
+  <form method="post" action="/admin/regions/seed" class="card-inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="btn" type="submit">Seed all 16 regions of Ghana</button>
+  </form>
+  <ul class="chips">
+    {% for r in regions %}<li>{{ r[1] }}</li>{% endfor %}
+  </ul>
+
+  <h2>Add Constituency</h2>
+  <form method="post" action="/admin/constituencies/add" class="card-inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label for="const_name">Name</label>
+    <input id="const_name" name="name" required>
+    <label for="region_id">Region</label>
+    <select id="region_id" name="region_id" required>
+      {% for r in regions %}<option value="{{ r[0] }}">{{ r[1] }}</option>{% endfor %}
+    </select>
+    <button class="btn" type="submit">Add</button>
+  </form>
+
+  <h2>Add Polling Station</h2>
+  <form method="post" action="/admin/stations/add" class="card-inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label for="ps_name">Name</label>
+    <input id="ps_name" name="name" required>
+    <label for="ps_code">Code</label>
+    <input id="ps_code" name="code" required>
+    <label for="ps_constituency">Constituency</label>
+    <select id="ps_constituency" name="constituency_id" required>
+      {% for c in constituencies %}<option value="{{ c[0] }}">{{ c[1] }} ({{ c[2] }})</option>{% endfor %}
+    </select>
+    <button class="btn" type="submit">Add</button>
+  </form>
+
+  <h2>Add Political Party</h2>
+  <form method="post" action="/admin/parties/add" class="card-inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label for="party_name">Name</label>
+    <input id="party_name" name="name" required>
+    <label for="party_abbr">Abbreviation</label>
+    <input id="party_abbr" name="abbreviation" placeholder="NPP, NDC...">
+    <button class="btn" type="submit">Add</button>
+  </form>
+
+  <h2>Add Presidential Candidate</h2>
+  <form method="post" action="/admin/candidates/president/add" class="card-inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label for="pres_name">Name</label>
+    <input id="pres_name" name="name" required>
+    <label for="pres_party">Party</label>
+    <select id="pres_party" name="party_id" required>
+      {% for p in parties %}<option value="{{ p[0] }}">{{ p[1] }} ({{ p[2] or '—' }})</option>{% endfor %}
+    </select>
+    <label for="pres_election">Election</label>
+    <select id="pres_election" name="election_id" required>
+      {% for e in elections %}<option value="{{ e[0] }}">{{ e[1] }} ({{ e[2] }})</option>{% endfor %}
+    </select>
+    <button class="btn" type="submit">Add</button>
+  </form>
+
+  <h2>Add MP Candidate</h2>
+  <form method="post" action="/admin/candidates/mp/add" class="card-inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label for="mp_name">Name</label>
+    <input id="mp_name" name="name" required>
+    <label for="mp_party">Party (0 = Independent)</label>
+    <select id="mp_party" name="party_id" required>
+      <option value="0">Independent</option>
+      {% for p in parties %}<option value="{{ p[0] }}">{{ p[1] }} ({{ p[2] or '—' }})</option>{% endfor %}
+    </select>
+    <label for="mp_election">Election</label>
+    <select id="mp_election" name="election_id" required>
+      {% for e in elections %}<option value="{{ e[0] }}">{{ e[1] }} ({{ e[2] }})</option>{% endfor %}
+    </select>
+    <label for="mp_constituency">Constituency</label>
+    <select id="mp_constituency" name="constituency_id" required>
+      {% for c in constituencies %}<option value="{{ c[0] }}">{{ c[1] }} ({{ c[2] }})</option>{% endfor %}
+    </select>
+    <button class="btn" type="submit">Add</button>
+  </form>
+
+  <h2>Current Records</h2>
+  <h3>Constituencies</h3>
+  <ul>
+    {% for c in constituencies %}<li>{{ c[1] }} ({{ c[2] }})</li>{% endfor %}
+  </ul>
+  <h3>Polling Stations</h3>
+  <ul>
+    {% for s in stations %}<li>{{ s[1] }} ({{ s[2] }}) — {{ s[3] }}</li>{% endfor %}
+  </ul>
+  <h3>Parties</h3>
+  <ul>
+    {% for p in parties %}<li>{{ p[1] }} ({{ p[2] or '—' }})</li>{% endfor %}
+  </ul>
+  <h3>Recent Candidates</h3>
+  <table>
+    <thead><tr><th>ID</th><th>Name</th><th>Party</th><th>Election</th></tr></thead>
+    <tbody>
+      {% for c in candidates %}
+        <tr><td>{{ c[0] }}</td><td>{{ c[1] }}</td><td>{{ c[2] or 'Independent' }}</td><td>{{ c[3] }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

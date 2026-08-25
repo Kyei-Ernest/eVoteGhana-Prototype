@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Verify Ballot — eVoteGhana{% endblock %}
+{% block content %}
+<section class="narrow">
+  <h1>Verify a Vote by Ballot ID</h1>
+  <form method="post" action="/verify">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label for="ballot_id">Ballot Paper ID (e.g., BALLOT-XXXX)</label>
+    <input id="ballot_id" name="ballot_id" required placeholder="BALLOT-XXXXXXXXXXXX">
+    <button class="btn" type="submit">Verify</button>
+  </form>
+
+  {% if error %}
+    <p class="error">{{ error }}</p>
+  {% endif %}
+
+  {% if result %}
+    <div class="verify-result">
+      <h2>VOTE VERIFICATION</h2>
+      <dl>
+        <dt>Ballot ID</dt><dd>{{ result[0] }}</dd>
+        <dt>Timestamp</dt><dd>{{ result[1] }}</dd>
+        <dt>Election</dt><dd>{{ result[4] }}</dd>
+        <dt>Candidate</dt><dd>{{ result[2] }}</dd>
+        <dt>Party</dt><dd>{{ result[3] or 'Independent' }}</dd>
+        {% if result[5] %}<dt>Constituency</dt><dd>{{ result[5] }}</dd>{% endif %}
+      </dl>
+      {% if signature_ok %}
+        <p class="verified">INTEGRITY VERIFIED — the stored HMAC signature matches the recorded vote, so the record has not been altered since it was cast.</p>
+      {% else %}
+        <p class="runoff">INTEGRITY FAILURE — the stored signature does not match this vote. The record was altered after signing and must be treated as untrustworthy.</p>
+      {% endif %}
+    </div>
+  {% endif %}
+</section>
+{% endblock %}

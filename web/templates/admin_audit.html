@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Audit Trail — eVoteGhana Admin{% endblock %}
+{% block content %}
+<section>
+  <h1>Audit Trail</h1>
+  <p class="lead">Append-only record of actions (last 200 entries).</p>
+  <p><a href="/admin">&larr; Back to dashboard</a></p>
+  <table>
+    <thead><tr><th>ID</th><th>Action</th><th>Table</th><th>Record</th><th>Actor</th><th>Details</th><th>Timestamp</th></tr></thead>
+    <tbody>
+      {% for row in logs %}
+        <tr>
+          <td>{{ row[0] }}</td>
+          <td>{{ row[1] }}</td>
+          <td>{{ row[2] or '—' }}</td>
+          <td>{{ row[3] or '—' }}</td>
+          <td>{{ row[4] or '—' }}</td>
+          <td>{{ row[5] or '' }}</td>
+          <td>{{ row[6] }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

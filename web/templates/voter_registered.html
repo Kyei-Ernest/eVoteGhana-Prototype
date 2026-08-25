@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Registration Complete — eVoteGhana{% endblock %}
+{% block content %}
+<section class="narrow">
+  <h1>Registration Complete</h1>
+  <p class="lead">Welcome, {{ name }}. Your voter record has been created.</p>
+  <div class="voter-id-box">
+    <p>Your Voter ID is:</p>
+    <p class="voter-id">{{ voter_id }}</p>
+    <p class="muted">Keep this ID and your password safe. You will need both to cast your vote.</p>
+  </div>
+  <a class="btn" href="/vote">Proceed to voting</a>
+</section>
+{% endblock %}

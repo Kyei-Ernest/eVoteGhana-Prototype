@@ -1,11 +1,13 @@
 import getpass
+
 import mysql.connector
+
 from config import Config
 
 # SQL statements for creating all database tables
 
 CREATE_DATABASE = """
-CREATE DATABASE IF NOT EXISTS {dbname} CHARACTER SET utf8 COLLATE utf8_general_ci;
+CREATE DATABASE IF NOT EXISTS {dbname} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 """
 
 CREATE_REGIONS = """
@@ -80,7 +82,10 @@ CREATE TABLE IF NOT EXISTS voterinfo (
     constituency_id INT,
     polling_station_id INT,
     voted BOOLEAN DEFAULT FALSE,
+    mp_vote INT,
+    president_vote INT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_voterinfo_personal_id (personal_id),
     FOREIGN KEY (constituency_id) REFERENCES constituencies(id),
     FOREIGN KEY (polling_station_id) REFERENCES polling_stations(id)
 );
@@ -134,6 +139,8 @@ CREATE TABLE IF NOT EXISTS audit_log (
 );
 """
 
+MIN_ADMIN_PASSWORD_LENGTH = 8
+
 SEED_REGIONS = """
 INSERT IGNORE INTO regions (id, name) VALUES
 (1, 'Ahafo'), (2, 'Ashanti'), (3, 'Bono'), (4, 'Bono East'),
@@ -142,23 +149,42 @@ INSERT IGNORE INTO regions (id, name) VALUES
 (13, 'Upper West'), (14, 'Volta'), (15, 'Western'), (16, 'Western North');
 """
 
+# Triggers that make the audit log physically append-only: any UPDATE or DELETE
+# aborts inside the engine itself rather than relying on application discipline.
+AUDIT_IMMUTABILITY_TRIGGERS = [
+    """
+    CREATE TRIGGER audit_log_no_update BEFORE UPDATE ON audit_log
+    FOR EACH ROW BEGIN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'audit_log is append-only: updates are forbidden';
+    END;
+    """,
+    """
+    CREATE TRIGGER audit_log_no_delete BEFORE DELETE ON audit_log
+    FOR EACH ROW BEGIN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'audit_log is append-only: deletes are forbidden';
+    END;
+    """,
+]
+
+APPLY_TRIGGER_SQL = [
+    'DROP TRIGGER IF EXISTS audit_log_no_update',
+    'DROP TRIGGER IF EXISTS audit_log_no_delete',
+]
+
 
 def table_exists(cursor, table_name):
     """Check whether a table already exists in the database."""
-    cursor.execute("SHOW TABLES LIKE %s", (table_name,))
+    cursor.execute('SHOW TABLES LIKE %s', (table_name,))
     return cursor.fetchone() is not None
 
 
 def setup_database():
     """Create the database, all tables, seed regions, and prompt for the initial admin account."""
-    dbname = input(f"Enter database name [{Config.DB_NAME_MAIN}]: ") or Config.DB_NAME_MAIN
+    dbname = input(f'Enter database name [{Config.DB_NAME_MAIN}]: ') or Config.DB_NAME_MAIN
 
     try:
         mydb_connection = mysql.connector.connect(
-            host=Config.DB_HOST,
-            user=Config.DB_USER,
-            password=Config.DB_PASSWORD,
-            port=Config.DB_PORT
+            host=Config.DB_HOST, user=Config.DB_USER, password=Config.DB_PASSWORD, port=Config.DB_PORT
         )
         cursor = mydb_connection.cursor()
         cursor.execute(CREATE_DATABASE.format(dbname=dbname))
@@ -166,75 +192,79 @@ def setup_database():
         mydb_connection.close()
 
         mydb = mysql.connector.connect(
-            host=Config.DB_HOST,
-            user=Config.DB_USER,
-            password=Config.DB_PASSWORD,
-            port=Config.DB_PORT,
-            database=dbname
+            host=Config.DB_HOST, user=Config.DB_USER, password=Config.DB_PASSWORD, port=Config.DB_PORT, database=dbname
         )
         cursor = mydb.cursor()
 
         cursor.execute(CREATE_REGIONS)
         cursor.execute(SEED_REGIONS)
-        print("regions table created and seeded.")
+        print('regions table created and seeded.')
 
         cursor.execute(CREATE_CONSTITUENCIES)
-        print("constituencies table created.")
+        print('constituencies table created.')
 
         cursor.execute(CREATE_POLLING_STATIONS)
-        print("polling_stations table created.")
+        print('polling_stations table created.')
 
         cursor.execute(CREATE_PARTIES)
-        print("parties table created.")
+        print('parties table created.')
 
         cursor.execute(CREATE_ELECTIONS)
-        print("elections table created.")
+        print('elections table created.')
 
         cursor.execute(CREATE_CANDIDATES)
-        print("candidates table created.")
+        print('candidates table created.')
 
         cursor.execute(CREATE_VOTERINFO)
-        print("voterinfo table created.")
+        print('voterinfo table created.')
 
         cursor.execute(CREATE_PASS_TABLE)
-        print("pass_table created.")
+        print('pass_table created.')
 
         cursor.execute(CREATE_VOTES)
-        print("votes table created.")
+        print('votes table created.')
 
         cursor.execute(CREATE_ADMINS)
-        print("admins table created.")
+        print('admins table created.')
 
-        cursor.execute("SELECT COUNT(*) FROM admins")
+        cursor.execute('SELECT COUNT(*) FROM admins')
         if cursor.fetchone()[0] == 0:
             import bcrypt
-            print("\n--- First-time setup: Create admin account ---")
-            admin_user = input("Admin username [admin]: ") or "admin"
-            admin_pass = getpass.getpass("Admin password: ")
-            confirm_pass = getpass.getpass("Confirm password: ")
-            while admin_pass != confirm_pass or len(admin_pass) < 8:
+
+            print('\n--- First-time setup: Create admin account ---')
+            admin_user = input('Admin username [admin]: ') or 'admin'
+            admin_pass = getpass.getpass('Admin password: ')
+            confirm_pass = getpass.getpass('Confirm password: ')
+            while admin_pass != confirm_pass or len(admin_pass) < MIN_ADMIN_PASSWORD_LENGTH:
                 if admin_pass != confirm_pass:
-                    print("Passwords do not match.")
+                    print('Passwords do not match.')
                 else:
-                    print("Password must be at least 8 characters.")
-                admin_pass = getpass.getpass("Admin password: ")
-                confirm_pass = getpass.getpass("Confirm password: ")
+                    print('Password must be at least 8 characters.')
+                admin_pass = getpass.getpass('Admin password: ')
+                confirm_pass = getpass.getpass('Confirm password: ')
             hashed = bcrypt.hashpw(admin_pass.encode('utf-8'), bcrypt.gensalt())
-            cursor.execute("INSERT INTO admins(username, password_hash, role) VALUES (%s, %s, 'super_admin')",
-                           (admin_user, hashed.decode('utf-8')))
+            cursor.execute(
+                "INSERT INTO admins(username, password_hash, role) VALUES (%s, %s, 'super_admin')",
+                (admin_user, hashed.decode('utf-8')),
+            )
             print(f"Admin '{admin_user}' created.")
 
         cursor.execute(CREATE_AUDIT_LOG)
-        print("audit_log table created.")
+        print('audit_log table created.')
+
+        for drop_sql, trigger_ddl in zip(APPLY_TRIGGER_SQL, AUDIT_IMMUTABILITY_TRIGGERS):
+            cursor.execute(drop_sql)
+            cursor.execute(trigger_ddl)
+        print('audit_log immutability triggers installed.')
 
         mydb.commit()
         cursor.close()
         mydb.close()
-        print("All tables created successfully!")
+        print('All tables created successfully!')
 
     except mysql.connector.Error as err:
-        print(f"Error creating database/tables: {err}")
+        print(f'Error creating database/tables: {err}')
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     setup_database()

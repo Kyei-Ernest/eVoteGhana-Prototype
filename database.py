@@ -1,5 +1,6 @@
 import mysql.connector
 from mysql.connector import Error
+
 from config import Config
 
 
@@ -15,7 +16,7 @@ class DatabaseManager:
             self.cursor = self.conn.cursor(buffered=True)
             return self
         except Error as e:
-            print(f"Error connecting to database: {e}")
+            print(f'Error connecting to database: {e}')
             raise
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
@@ -36,7 +37,7 @@ class DatabaseManager:
                 self.cursor.execute(query)
             return self.cursor
         except Error as e:
-            print(f"Error executing query: {e}")
+            print(f'Error executing query: {e}')
             raise
 
     def fetch_all(self) -> list[tuple]:

@@ -1,9 +1,10 @@
 import re
 
-
 EMAIL_RE = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
 GHANA_CARD_RE = re.compile(r'^GHA-[A-Z0-9]{10}$', re.IGNORECASE)
 CONTACT_RE = re.compile(r'^0\d{9}$')
+
+MIN_PASSWORD_LENGTH = 10
 
 
 def is_valid_email(email: str) -> bool:
@@ -19,7 +20,7 @@ def is_valid_contact(contact: str) -> bool:
 
 
 def validate_password_strength(password: str) -> tuple[bool, str]:
-    if len(password) < 10:
+    if len(password) < MIN_PASSWORD_LENGTH:
         return False, 'Password must be at least 10 characters.'
     if not any(c.isupper() for c in password):
         return False, 'Password must contain at least one uppercase letter.'

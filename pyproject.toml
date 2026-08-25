@@ -1,5 +1,6 @@
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+python_files = ["test_*.py"]
 
 [tool.ruff]
 target-version = "py312"
@@ -7,13 +8,27 @@ line-length = 120
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W", "UP", "N", "SIM", "PL"]
+# PLC0415: lazy imports are deliberate (optional mysqldump dep, CLI-only paths)
+# N999: legacy module names (Registration, prov_Ghcard_details) kept for compatibility
+ignore = ["PLC0415", "N999"]
+
+[tool.ruff.lint.pylint]
+max-args = 12
+max-positional-args = 12
+max-returns = 12
+max-branches = 16
 
 [tool.ruff.format]
 quote-style = "single"
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
+"tests/*" = ["PLC0415", "PLR2004", "SIM117"]
+"web/__init__.py" = ["N999"]
+"migrate.py" = ["PLR0915", "PLR0912"]
+"schema.py" = ["PLR0915"]
+"main.py" = ["PLR0915", "PLR0912"]
+"Registration.py" = ["PLR0915"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
-python_files = ["test_*.py"]
