@@ -4,8 +4,12 @@ services:
     container_name: evote_mysql
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env (copy .env.example)}
+      # The application connects as a dedicated least privilege user; root is
+      # retained only for administrative emergencies and never leaves the host.
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?Set DB_ROOT_PASSWORD in .env (copy .env.example)}
       MYSQL_DATABASE: ${DB_NAME_MAIN:-mydb}
+      MYSQL_USER: ${DB_USER:-evote_app}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env (copy .env.example)}
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
@@ -23,13 +27,17 @@ services:
         condition: service_healthy
     environment:
       DB_HOST: db
-      DB_USER: root
+      DB_USER: ${DB_USER:-evote_app}
       DB_PASSWORD: ${DB_PASSWORD}
       DB_NAME_MAIN: ${DB_NAME_MAIN:-mydb}
       DB_NAME_IDENTITY: ${DB_NAME_IDENTITY:-gg}
       DB_PORT: 3306
-      HMAC_SECRET_KEY: ${HMAC_SECRET_KEY:?Set HMAC_SECRET_KEY in .env}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-8}
+      HMAC_KEYS: ${HMAC_KEYS:-}
+      HMAC_KEY_VERSION: ${HMAC_KEY_VERSION:-k1}
+      HMAC_SECRET_KEY: ${HMAC_SECRET_KEY:-}
       SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env}
+      TOTP_ISSUER: ${TOTP_ISSUER:-eVoteGhana}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
       LANGUAGE: ${LANGUAGE:-en}
@@ -72,7 +80,7 @@ services:
         condition: service_healthy
     environment:
       DB_HOST: db
-      DB_USER: root
+      DB_USER: ${DB_USER:-evote_app}
       DB_PASSWORD: ${DB_PASSWORD}
       DB_NAME_MAIN: ${DB_NAME_MAIN:-mydb}
       DB_PORT: 3306

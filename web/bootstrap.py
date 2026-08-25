@@ -36,6 +36,7 @@ DDL_STATEMENTS = [
     schema_module.CREATE_VOTES,
     schema_module.CREATE_ADMINS,
     schema_module.CREATE_AUDIT_LOG,
+    schema_module.CREATE_RATE_LIMIT_BUCKETS,
 ]
 
 _DB_NAME_RE = re.compile(r'^[A-Za-z0-9_]+$')
@@ -75,15 +76,121 @@ def _ensure_columns(db: DatabaseManager, table: str, columns: list[tuple[str, st
 
 
 def ensure_schema() -> None:
-    """Create all tables and seed data."""
+    """Create all tables and converge any older deployment onto the current model."""
     with DatabaseManager() as db:
         for ddl in DDL_STATEMENTS:
             db.execute_query(ddl)
         db.execute_query(schema_module.SEED_REGIONS)
-        _ensure_columns(db, 'voterinfo', [('mp_vote', 'INT'), ('president_vote', 'INT')])
+        # Data migrations run while immutability triggers are absent because
+        # several of them need to UPDATE historical rows.
+        db.execute_query('DROP TRIGGER IF EXISTS audit_log_no_update')
+        db.execute_query('DROP TRIGGER IF EXISTS audit_log_no_delete')
+        _migrate_legacy_ballot_slots(db)
+        _ensure_votes_key_version(db)
+        _migrate_votes_drop_voter_link(db)
+        _migrate_admin_totp_columns(db)
+        _ensure_audit_chain_columns_and_backfill(db)
         _ensure_unique_personal_id(db)
         _ensure_audit_immutability(db)
     logger.info('Schema ensured.')
+
+
+def _table_has_column(db: DatabaseManager, table: str, column: str) -> bool:
+    db.execute_query(
+        'SELECT COUNT(*) FROM information_schema.columns '
+        'WHERE table_schema = DATABASE() AND table_name = %s AND column_name = %s',
+        (table, column),
+    )
+    return db.fetch_one()[0] > 0
+
+
+def _migrate_legacy_ballot_slots(db: DatabaseManager) -> None:
+    """Convert candidate storing vote columns into secrecy preserving flags.
+
+    Deployments from earlier prototypes recorded the chosen candidate id on the
+    voter roll itself, which is the opposite of a secret ballot. The choice
+    linkage is destroyed after converting it into used slot flags; run a backup
+    before upgrading a database containing real history.
+    """
+    legacy_present = _table_has_column(db, 'voterinfo', 'mp_vote') or _table_has_column(
+        db, 'voterinfo', 'president_vote'
+    )
+    if not legacy_present and _table_has_column(db, 'voterinfo', 'mp_voted'):
+        return
+    for col in ('mp_voted', 'president_voted'):
+        if not _table_has_column(db, 'voterinfo', col):
+            db.execute_query(f'ALTER TABLE voterinfo ADD COLUMN {col} BOOLEAN NOT NULL DEFAULT FALSE')
+    if _table_has_column(db, 'voterinfo', 'mp_vote'):
+        db.execute_query('UPDATE voterinfo SET mp_voted = 1 WHERE mp_vote IS NOT NULL')
+    if _table_has_column(db, 'voterinfo', 'president_vote'):
+        db.execute_query('UPDATE voterinfo SET president_voted = 1 WHERE president_vote IS NOT NULL')
+    for col in ('mp_vote', 'president_vote'):
+        if _table_has_column(db, 'voterinfo', col):
+            db.execute_query(f'ALTER TABLE voterinfo DROP COLUMN {col}')
+    logger.warning(
+        'Migrated voter roll to boolean ballot slots; per voter choice linkage was removed for ballot secrecy.'
+    )
+
+
+def _ensure_votes_key_version(db: DatabaseManager) -> None:
+    if not _table_has_column(db, 'votes', 'key_version'):
+        db.execute_query("ALTER TABLE votes ADD COLUMN key_version VARCHAR(8) NOT NULL DEFAULT 'k1'")
+        logger.info('Added key_version to votes for signing key rotation.')
+
+
+def _migrate_votes_drop_voter_link(db: DatabaseManager) -> None:
+    """Remove the voter identity column from stored ballots on legacy databases.
+
+    This permanently destroys the ability to map historical ballots to voters;
+    that destruction is the privacy remediation, not an accident of it.
+    """
+    if not _table_has_column(db, 'votes', 'voter_id'):
+        return
+    db.execute_query(
+        'SELECT CONSTRAINT_NAME FROM information_schema.KEY_COLUMN_USAGE '
+        "WHERE table_schema = DATABASE() AND table_name = 'votes' AND column_name = 'voter_id' "
+        'AND referenced_column_name IS NOT NULL LIMIT 1'
+    )
+    row = db.fetch_one()
+    if row:
+        db.execute_query(f'ALTER TABLE votes DROP FOREIGN KEY `{row[0]}`')
+    db.execute_query('ALTER TABLE votes DROP COLUMN voter_id')
+    logger.warning('Dropped votes.voter_id: ballots are now anonymous at storage level.')
+
+
+def _migrate_admin_totp_columns(db: DatabaseManager) -> None:
+    for col, ddl in (('totp_secret', 'VARCHAR(32) NULL'), ('totp_enabled', 'BOOLEAN NOT NULL DEFAULT FALSE')):
+        if not _table_has_column(db, 'admins', col):
+            db.execute_query(f'ALTER TABLE admins ADD COLUMN {col} {ddl}')
+
+
+def _ensure_audit_chain_columns_and_backfill(db: DatabaseManager) -> None:
+    """Add chain columns when missing and link every existing unchained entry."""
+    changed = False
+    if not _table_has_column(db, 'audit_log', 'prev_hash'):
+        db.execute_query('ALTER TABLE audit_log ADD COLUMN prev_hash CHAR(64) NOT NULL')
+        changed = True
+    if not _table_has_column(db, 'audit_log', 'entry_hash'):
+        db.execute_query('ALTER TABLE audit_log ADD COLUMN entry_hash CHAR(64) NOT NULL')
+        changed = True
+
+    from audit_log import GENESIS_HASH, _entry_hash
+
+    db.execute_query('SELECT id, action, table_name, record_id, details, actor, created_at FROM audit_log ORDER BY id')
+    rows = db.fetch_all()
+    needs_backfill = changed or any(r[6] is None for r in rows)
+    if not needs_backfill:
+        return
+    prev = GENESIS_HASH
+    for entry_id, action, table_name, record_id, details, actor, created_at in rows:
+        ts = created_at.isoformat() if hasattr(created_at, 'isoformat') else str(created_at or '')
+        digest = _entry_hash(prev, action, table_name, str(record_id), str(details or ''), str(actor or ''), ts)
+        db.execute_query(
+            'UPDATE audit_log SET prev_hash = %s, entry_hash = %s, created_at = %s WHERE id = %s',
+            (prev, digest, ts, entry_id),
+        )
+        prev = digest
+    logger.info('Audit chain backfilled over %d entries.', len(rows))
 
 
 def _ensure_unique_personal_id(db: DatabaseManager) -> None:

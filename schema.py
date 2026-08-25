@@ -82,8 +82,8 @@ CREATE TABLE IF NOT EXISTS voterinfo (
     constituency_id INT,
     polling_station_id INT,
     voted BOOLEAN DEFAULT FALSE,
-    mp_vote INT,
-    president_vote INT,
+    mp_voted BOOLEAN DEFAULT FALSE,
+    president_voted BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uq_voterinfo_personal_id (personal_id),
     FOREIGN KEY (constituency_id) REFERENCES constituencies(id),
@@ -103,14 +103,13 @@ CREATE TABLE IF NOT EXISTS pass_table (
 CREATE_VOTES = """
 CREATE TABLE IF NOT EXISTS votes (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    voter_id VARCHAR(255) NOT NULL,
     candidate_id INT NOT NULL,
     election_id INT NOT NULL,
     polling_station_id INT,
     hmac_hash VARCHAR(255) NOT NULL,
     ballot_paper_id VARCHAR(50) UNIQUE,
+    key_version VARCHAR(8) NOT NULL DEFAULT 'k1',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (voter_id) REFERENCES voterinfo(voter_id),
     FOREIGN KEY (candidate_id) REFERENCES candidates(id),
     FOREIGN KEY (election_id) REFERENCES elections(id),
     FOREIGN KEY (polling_station_id) REFERENCES polling_stations(id)
@@ -123,6 +122,8 @@ CREATE TABLE IF NOT EXISTS admins (
     username VARCHAR(100) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
     role ENUM('super_admin', 'admin', 'viewer') DEFAULT 'admin',
+    totp_secret VARCHAR(32) NULL,
+    totp_enabled BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 """
@@ -135,7 +136,9 @@ CREATE TABLE IF NOT EXISTS audit_log (
     record_id VARCHAR(255),
     details TEXT,
     actor VARCHAR(255),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    prev_hash CHAR(64) NOT NULL,
+    entry_hash CHAR(64) NOT NULL,
+    created_at VARCHAR(35) NOT NULL
 );
 """
 
@@ -147,6 +150,14 @@ INSERT IGNORE INTO regions (id, name) VALUES
 (5, 'Central'), (6, 'Eastern'), (7, 'Greater Accra'), (8, 'Northern'),
 (9, 'North East'), (10, 'Oti'), (11, 'Savannah'), (12, 'Upper East'),
 (13, 'Upper West'), (14, 'Volta'), (15, 'Western'), (16, 'Western North');
+"""
+
+CREATE_RATE_LIMIT_BUCKETS = """
+CREATE TABLE IF NOT EXISTS rate_limit_buckets (
+    bucket VARCHAR(255) PRIMARY KEY,
+    hits INT NOT NULL DEFAULT 0,
+    window_start TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 # Triggers that make the audit log physically append-only: any UPDATE or DELETE

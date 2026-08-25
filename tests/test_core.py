@@ -59,17 +59,20 @@ class TestHmacUtils:
     def test_compute_and_verify_hmac(self):
         from hmac_utils import compute_vote_hmac, verify_vote_hmac
 
-        h = compute_vote_hmac('VOTER1', 1, 1, '2024-01-01T00:00:00')
-        assert verify_vote_hmac('VOTER1', 1, 1, '2024-01-01T00:00:00', h) is True
+        sig, version = compute_vote_hmac(1, 1, 'BALLOT-TEST000001', 3)
+        assert verify_vote_hmac(1, 1, 'BALLOT-TEST000001', sig, version, 3) is True
 
     def test_hmac_tamper_detection(self):
         from hmac_utils import compute_vote_hmac, verify_vote_hmac
 
-        h = compute_vote_hmac('VOTER1', 1, 1, '2024-01-01T00:00:00')
-        assert verify_vote_hmac('VOTER1', 2, 1, '2024-01-01T00:00:00', h) is False
+        sig, version = compute_vote_hmac(1, 1, 'BALLOT-TEST000001', 3)
+        assert verify_vote_hmac(1, 2, 'BALLOT-TEST000001', sig, version, 3) is False
 
-    def test_hmac_different_timestamp(self):
+    def test_hmac_different_station_detected(self):
         from hmac_utils import compute_vote_hmac, verify_vote_hmac
+
+        sig, version = compute_vote_hmac(1, 1, 'BALLOT-TEST000001', 3)
+        assert verify_vote_hmac(1, 1, 'BALLOT-TEST000001', sig, version, 4) is False
 
         h = compute_vote_hmac('VOTER1', 1, 1, '2024-01-01T00:00:00')
         assert verify_vote_hmac('VOTER1', 1, 1, '2024-01-02T00:00:00', h) is False

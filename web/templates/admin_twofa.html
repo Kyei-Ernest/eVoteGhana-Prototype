@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Two Factor Sign In — eVoteGhana{% endblock %}
+{% block content %}
+<section class="narrow">
+  <h1>Two Factor Authentication</h1>
+  <p class="lead">Enter the 6 digit code from your authenticator app for <strong>{{ request.session.pending_2fa.username }}</strong>.</p>
+  <form method="post" action="/admin/login/2fa">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label for="code">Authentication code</label>
+    <input id="code" name="code" required inputmode="numeric" pattern="[0-9]{6}" maxlength="6"
+           autocomplete="one-time-code" placeholder="000000">
+    <button class="btn" type="submit">Verify code</button>
+  </form>
+</section>
+{% endblock %}

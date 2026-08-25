@@ -1,7 +1,39 @@
+"""Database access with optional connection pooling.
+
+Every consumer uses the ``DatabaseManager`` context manager, which commits on
+success and rolls back on exception. When ``DB_POOL_SIZE`` is greater than zero
+connections are borrowed from a process local ``MySQLConnectionPool`` instead of
+being opened per operation; closing a pooled connection returns it to the pool.
+Pools are keyed by database name because the identity lookup helpers target a
+separate database.
+"""
+
+import os
+
 import mysql.connector
-from mysql.connector import Error
+from mysql.connector import Error, pooling
 
 from config import Config
+
+_POOL_CACHE: dict[str, pooling.MySQLConnectionPool] = {}
+
+
+def _get_pool(database_name: str | None) -> pooling.MySQLConnectionPool | None:
+    try:
+        size = int(os.getenv('DB_POOL_SIZE', '0'))
+    except ValueError:
+        size = 0
+    if size <= 0:
+        return None
+    key = database_name or Config.DB_NAME_MAIN
+    if key not in _POOL_CACHE:
+        _POOL_CACHE[key] = pooling.MySQLConnectionPool(
+            pool_name=f'evote_{key}',
+            pool_size=size,
+            pool_reset_session=True,
+            **Config.get_db_config(key),
+        )
+    return _POOL_CACHE[key]
 
 
 class DatabaseManager:
@@ -12,7 +44,8 @@ class DatabaseManager:
 
     def __enter__(self) -> 'DatabaseManager':
         try:
-            self.conn = mysql.connector.connect(**self.config)
+            pool = _get_pool(self.config.get('database'))
+            self.conn = pool.get_connection() if pool else mysql.connector.connect(**self.config)
             self.cursor = self.conn.cursor(buffered=True)
             return self
         except Error as e:
@@ -27,6 +60,7 @@ class DatabaseManager:
                 self.conn.commit()
             else:
                 self.conn.rollback()
+            # Closing a pooled connection hands it back to the pool.
             self.conn.close()
 
     def execute_query(self, query: str, params: tuple | None = None) -> mysql.connector.cursor.MySQLCursor:

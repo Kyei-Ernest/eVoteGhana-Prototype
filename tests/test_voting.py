@@ -80,7 +80,7 @@ class TestVotePresident:
             vote_president('VOTER1')
 
         queries = [c.args[0] for c in mock_conn.execute_query.call_args_list]
-        assert any('president_vote IS NULL' in q for q in queries)
+        assert any('president_voted' in q for q in queries)
         assert any('INSERT INTO votes' in q for q in queries)
 
     @patch('voting.DatabaseManager')

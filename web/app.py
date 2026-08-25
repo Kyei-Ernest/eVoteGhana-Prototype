@@ -36,8 +36,11 @@ from election import (
     needs_runoff,
     transition_phase,
 )
-from hmac_utils import verify_vote_hmac
-from rate_limiter import voter_auth_limiter, voter_reg_limiter
+from hmac_utils import audit_votes_integrity, verify_vote_hmac
+from rate_limiter import (
+    db_voter_auth_limiter,
+    db_voter_reg_limiter,
+)
 from Registration import RegisterVoter
 from schema import SEED_REGIONS
 from voting import claim_ballot_slot, maybe_mark_voting_complete, record_vote
@@ -57,6 +60,8 @@ RECENT_CANDIDATES_SQL = (
     'LEFT JOIN parties p ON c.party_id = p.id '
     'JOIN elections e ON c.election_id = e.id ORDER BY c.id DESC LIMIT 100'
 )
+
+PENDING_2FA_WINDOW_SECONDS = 300
 
 logger = logging.getLogger('evote.web')
 
@@ -227,7 +232,7 @@ def register_submit(
     confirm_password: str = Form(''),
 ):
     client = request.client.host if request.client else 'unknown'
-    if not voter_reg_limiter.is_allowed(f'reg:{client}'):
+    if not db_voter_reg_limiter.is_allowed(f'reg:{client}'):
         flash(request, 'Too many registration attempts from this address. Try again later.', 'error')
         return RedirectResponse('/register', status_code=303)
 
@@ -424,7 +429,7 @@ def _cast_ballot(request: Request, candidate_id: int, personal_id: str, position
     voter_id = request.session.get('voter_id')
     if not voter_id:
         return RedirectResponse('/vote', status_code=303)
-    if not voter_auth_limiter.is_allowed(voter_id):
+    if not db_voter_auth_limiter.is_allowed(voter_id):
         flash(request, 'Too many attempts. Try again in 5 minutes.', 'error')
         return RedirectResponse('/vote', status_code=303)
 
@@ -458,7 +463,7 @@ def _cast_ballot(request: Request, candidate_id: int, personal_id: str, position
     with DatabaseManager() as db:
         # The conditional UPDATE makes double-voting impossible even when two
         # requests arrive simultaneously: only one can flip the NULL slot.
-        if not claim_ballot_slot(db, voter_id, position, candidate_id):
+        if not claim_ballot_slot(db, voter_id, position):
             flash(request, 'Your ballot for this race was already recorded.', 'error')
             return RedirectResponse('/vote', status_code=303)
         ballot_id = record_vote(db, voter_id, candidate_id, election_id)
@@ -513,7 +518,7 @@ def verify_submit(
     with DatabaseManager() as db:
         db.execute_query(
             'SELECT v.ballot_paper_id, v.created_at, c.name, p.name, e.title, c2.name, '
-            'v.voter_id, v.candidate_id, v.election_id, v.hmac_hash '
+            'v.candidate_id, v.election_id, v.hmac_hash, v.key_version, v.polling_station_id '
             'FROM votes v '
             'JOIN candidates c ON v.candidate_id = c.id '
             'LEFT JOIN parties p ON c.party_id = p.id '
@@ -529,7 +534,7 @@ def verify_submit(
             request, 'ballot_verify.html', result=None, error='Ballot ID not found. Please check and try again.'
         )
     display_row = row[:6]
-    signature_ok = verify_vote_hmac(row[6], row[7], row[8], row[0], row[9])
+    signature_ok = verify_vote_hmac(row[7], row[6], row[0], row[8], row[9] or 'k1', row[10])
     return render(request, 'ballot_verify.html', result=display_row, signature_ok=signature_ok)
 
 
@@ -591,16 +596,141 @@ def admin_login(
     password: str = Form(''),
 ):
     with DatabaseManager() as db:
-        db.execute_query('SELECT password_hash, role FROM admins WHERE username = %s', (username.strip(),))
+        db.execute_query(
+            'SELECT password_hash, role, totp_secret, totp_enabled FROM admins WHERE username = %s',
+            (username.strip(),),
+        )
         row = db.fetch_one()
 
     if not row or not bcrypt.checkpw(password.encode('utf-8'), row[0].encode('utf-8')):
         flash(request, 'Invalid credentials.', 'error')
         return render(request, 'admin_login.html')
 
-    request.session['admin'] = {'username': username.strip(), 'role': row[1]}
-    log_action('admin_login', 'admins', username.strip(), f'Role: {row[1]}', actor=username.strip())
+    _password_hash, role, totp_secret, totp_enabled = row
+    if totp_enabled and totp_secret:
+        # Password factor passed; hold the session in a pending state until the
+        # code factor completes. Nothing privileged is reachable meanwhile.
+        request.session['pending_2fa'] = {
+            'username': username.strip(),
+            'role': role,
+            'at': datetime.now(UTC).timestamp(),
+        }
+        return RedirectResponse('/admin/login/2fa', status_code=303)
+
+    request.session['admin'] = {'username': username.strip(), 'role': role}
+    log_action('admin_login', 'admins', username.strip(), f'Role: {role}', actor=username.strip())
     return RedirectResponse('/admin', status_code=303)
+
+
+@app.get('/admin/login/2fa', response_class=HTMLResponse)
+def admin_twofa_page(request: Request):
+    if not request.session.get('pending_2fa'):
+        return RedirectResponse('/admin/login', status_code=303)
+    return render(request, 'admin_twofa.html')
+
+
+@app.post('/admin/login/2fa', response_class=HTMLResponse)
+def admin_twofa_submit(
+    request: Request,
+    _csrf: None = Depends(security.csrf),
+    _rl: None = Depends(security.rate_limit_admin_login),
+    code: str = Form(''),
+):
+    pending = request.session.get('pending_2fa')
+    if not pending:
+        return RedirectResponse('/admin/login', status_code=303)
+    age = datetime.now(UTC).timestamp() - float(pending.get('at', 0))
+    if age > PENDING_2FA_WINDOW_SECONDS:
+        request.session.pop('pending_2fa', None)
+        flash(request, 'Two factor window expired. Please sign in again.', 'error')
+        return RedirectResponse('/admin/login', status_code=303)
+
+    import pyotp
+
+    with DatabaseManager() as db:
+        db.execute_query('SELECT totp_secret, totp_enabled FROM admins WHERE username = %s', (pending['username'],))
+        row = db.fetch_one()
+    if not row or not row[1] or not pyotp.TOTP(row[0]).verify(code.strip(), valid_window=1):
+        log_action('admin_2fa_failed', 'admins', pending['username'], 'Invalid or expired code')
+        flash(request, 'Invalid authentication code.', 'error')
+        return render(request, 'admin_twofa.html')
+
+    username, role = pending['username'], pending['role']
+    request.session.pop('pending_2fa', None)
+    request.session['admin'] = {'username': username, 'role': role}
+    log_action('admin_login', 'admins', username, f'Role: {role} (2FA)', actor=username)
+    return RedirectResponse('/admin', status_code=303)
+
+
+@app.get('/admin/security', response_class=HTMLResponse)
+def admin_security_page(request: Request, admin: dict = Depends(security.require_admin)):
+    import pyotp
+
+    username = admin['username']
+    with DatabaseManager() as db:
+        db.execute_query('SELECT totp_secret, totp_enabled FROM admins WHERE username = %s', (username,))
+        row = db.fetch_one()
+
+    secret, enabled = row if row else (None, False)
+    provisioning_uri = None
+    if not enabled:
+        if not secret:
+            secret = pyotp.random_base32()
+            with DatabaseManager() as db:
+                db.execute_query('UPDATE admins SET totp_secret = %s WHERE username = %s', (secret, username))
+            log_action('admin_totp_secret_generated', 'admins', username, 'Pending enrollment')
+        provisioning_uri = pyotp.totp.TOTP(secret).provisioning_uri(
+            name=username, issuer_name=os.getenv('TOTP_ISSUER', 'eVoteGhana')
+        )
+    return render(
+        request, 'admin_security.html', admin=admin, enabled=enabled, secret=secret, provisioning_uri=provisioning_uri
+    )
+
+
+@app.post('/admin/security/totp/enable', response_class=HTMLResponse)
+def admin_totp_enable(
+    request: Request,
+    _admin: dict = Depends(security.require_admin),
+    _csrf: None = Depends(security.csrf),
+    code: str = Form(''),
+):
+    import pyotp
+
+    username = _admin['username']
+    with DatabaseManager() as db:
+        db.execute_query('SELECT totp_secret FROM admins WHERE username = %s', (username,))
+        row = db.fetch_one()
+        secret = row[0] if row else None
+        if not secret or not pyotp.TOTP(secret).verify(code.strip(), valid_window=1):
+            flash(request, 'Enrollment failed: the code did not match the shown secret.', 'error')
+            return RedirectResponse('/admin/security', status_code=303)
+        db.execute_query('UPDATE admins SET totp_enabled = 1 WHERE username = %s', (username,))
+    log_action('admin_totp_enabled', 'admins', username, 'Second factor active', actor=username)
+    flash(request, 'Two factor authentication is now active for your account.')
+    return RedirectResponse('/admin/security', status_code=303)
+
+
+@app.post('/admin/security/totp/disable', response_class=HTMLResponse)
+def admin_totp_disable(
+    request: Request,
+    _admin: dict = Depends(security.require_admin),
+    _csrf: None = Depends(security.csrf),
+    code: str = Form(''),
+):
+    import pyotp
+
+    username = _admin['username']
+    with DatabaseManager() as db:
+        db.execute_query('SELECT totp_secret, totp_enabled FROM admins WHERE username = %s', (username,))
+        row = db.fetch_one()
+        secret, enabled = row if row else (None, False)
+        if not enabled or not secret or not pyotp.TOTP(secret).verify(code.strip(), valid_window=1):
+            flash(request, 'Disable failed: provide a current authentication code.', 'error')
+            return RedirectResponse('/admin/security', status_code=303)
+        db.execute_query('UPDATE admins SET totp_enabled = 0, totp_secret = NULL WHERE username = %s', (username,))
+    log_action('admin_totp_disabled', 'admins', username, 'Second factor removed', actor=username)
+    flash(request, 'Two factor authentication has been removed from your account.')
+    return RedirectResponse('/admin/security', status_code=303)
 
 
 @app.post('/admin/logout', response_class=HTMLResponse)
@@ -865,8 +995,12 @@ def admin_voters(request: Request, admin: dict = Depends(security.require_admin)
 
 @app.get('/admin/audit', response_class=HTMLResponse)
 def admin_audit(request: Request, admin: dict = Depends(security.require_admin)):
+    from audit_log import verify_audit_chain
+
     logs = get_audit_trail(limit=200)
-    return render(request, 'admin_audit.html', admin=admin, logs=logs)
+    chain = verify_audit_chain()
+    integrity = audit_votes_integrity(limit=5000)
+    return render(request, 'admin_audit.html', admin=admin, logs=logs, chain=chain, integrity=integrity)
 
 
 @app.get('/admin/backup', response_class=HTMLResponse)

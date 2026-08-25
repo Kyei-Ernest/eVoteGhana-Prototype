@@ -121,6 +121,19 @@ Phases enforced by `election.py` — actions blocked unless in the correct phase
 ### Polling Station Management
 Voters are assigned to specific polling stations. Each station has a unique code.
 
+### Production Milestone (2026)
+
+| Capability | How it works |
+|------------|--------------|
+| Secret ballot at storage level | Ballots store no voter identity; the roll keeps only used flags, so database access cannot reveal how anyone voted |
+| Versioned signing keys | Every vote records its key version; rotate keys without invalidating history |
+| Tamper evident audit chain | Entries link by hash; the admin audit page verifies the full chain and reports break points |
+| Shared rate limiting | Login and voting attempt counters live in MySQL so all workers enforce one policy |
+| Connection pooling | DB_POOL_SIZE enables a per process connection pool |
+| Admin two factor | TOTP enrollment and enforced second factor on every admin sign in |
+
+> This system remains an educational prototype. Real election use requires certification, independent audit, and legal authorisation beyond software.
+
 ### Recent Upgrades (2026)
 
 | Upgrade | What it means |

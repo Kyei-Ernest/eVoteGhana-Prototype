@@ -96,8 +96,8 @@ def verify_vote_by_ballot() -> None:
         with DatabaseManager() as db:
             db.execute_query(
                 'SELECT v.ballot_paper_id, v.created_at, c.name as candidate, p.name as party, '
-                'e.title as election, c2.name as constituency, v.voter_id, v.candidate_id, '
-                'v.election_id, v.hmac_hash FROM votes v '
+                'e.title as election, c2.name as constituency, v.candidate_id, '
+                'v.election_id, v.hmac_hash, v.key_version, v.polling_station_id FROM votes v '
                 'JOIN candidates c ON v.candidate_id = c.id LEFT JOIN parties p ON c.party_id = p.id '
                 'LEFT JOIN constituencies c2 ON c.constituency_id = c2.id JOIN elections e ON v.election_id = e.id '
                 'WHERE v.ballot_paper_id = %s',
@@ -105,7 +105,7 @@ def verify_vote_by_ballot() -> None:
             )
             row = db.fetch_one()
             if row:
-                signature_ok = verify_vote_hmac(row[6], row[7], row[8], row[0], row[9])
+                signature_ok = verify_vote_hmac(row[7], row[6], row[0], row[8], row[9] or 'k1', row[10])
                 print('\n=== VOTE VERIFICATION ===')
                 print(f'Ballot ID:    {row[0]}')
                 print(f'Timestamp:    {row[1]}')

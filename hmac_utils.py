@@ -1,67 +1,100 @@
-"""Vote integrity: HMAC signatures and ballot paper IDs.
+"""Vote integrity: versioned HMAC signatures, ballot paper IDs, and audits.
 
-Every cast ballot carries an HMAC-SHA256 signature (scheme ``evote-v2``) computed
-over exactly the fields that are persisted in the ``votes`` table:
+Secrecy preserving scheme (``evote-v3``): a signature is computed over exactly
+the fields persisted in the ``votes`` table and over nothing that could link a
+ballot back to a voter::
 
-    voter_id | candidate_id | election_id | ballot_paper_id
+    evote-v3:{election_id}:{candidate_id}:{polling_station_id}:{ballot_paper_id}
 
-Signing stored fields means any later tampering with the database can be detected
-by recomputing the signature from the row itself (see :func:`audit_votes_integrity`).
-The earlier scheme signed a timestamp that was never persisted, which made stored
-signatures impossible to verify; rows signed under that scheme will report as
-tampered by :func:`audit_votes_integrity` and must be re-signed or discarded.
+The signing keys live in a small versioned ring. Every vote row records the
+``key_version`` used at signing time, so keys can be rotated without invalidating
+historical rows: new ballots adopt the active version while old rows keep
+verifying against their own recorded version.
 """
 
 import hashlib
 import hmac
+import json
+import os
 import secrets
 
-from config import Config
-
-SCHEME_VERSION = 'evote-v2'
-_HMAC_KEY_CACHE: dict[str, str] = {}
-
-
-def _get_hmac_key() -> str:
-    """Resolve the signing key once per process (env var wins over .env file)."""
-    if 'key' not in _HMAC_KEY_CACHE:
-        import os
-
-        key = os.getenv('HMAC_SECRET_KEY') or Config.get_hmac_key()
-        if not key:
-            raise ValueError('HMAC_SECRET_KEY must be configured before votes can be signed.')
-        _HMAC_KEY_CACHE['key'] = key
-    return _HMAC_KEY_CACHE['key']
+SCHEME_VERSION = 'evote-v3'
+DEFAULT_KEY_VERSION = 'k1'
+_KEYRING_CACHE: dict[str, dict[str, str]] = {}
 
 
-def compute_vote_hmac(voter_id: int | str, candidate_id: int, election_id: int, ballot_paper_id: str) -> str:
-    """Sign the four persisted vote attributes with HMAC-SHA256."""
-    msg = f'{SCHEME_VERSION}:{voter_id}:{candidate_id}:{election_id}:{ballot_paper_id}'
-    return hmac.new(
-        _get_hmac_key().encode('utf-8'),
-        msg.encode('utf-8'),
-        hashlib.sha256,
-    ).hexdigest()
+def _load_keyring() -> dict[str, str]:
+    """Resolve the keyring once per process.
+
+    Preferred source is the HMAC_KEYS environment variable holding JSON such as
+    ``{"k1": "<hex>", "k2": "<hex>"}``. When absent, the single HMAC_SECRET_KEY
+    becomes version k1 so simple deployments still work unchanged.
+    """
+    if 'ring' not in _KEYRING_CACHE:
+        raw = os.getenv('HMAC_KEYS', '')
+        if raw:
+            ring = json.loads(raw)
+            if not isinstance(ring, dict) or not ring:
+                raise ValueError('HMAC_KEYS must be a non empty JSON object of version to secret.')
+        else:
+            from config import Config
+
+            base = os.getenv('HMAC_SECRET_KEY') or Config.get_hmac_key()
+            if not base or base == 'change-this-to-a-secure-random-key-in-production':
+                raise ValueError('A real HMAC key must be configured before votes can be signed.')
+            ring = {DEFAULT_KEY_VERSION: base}
+        _KEYRING_CACHE['ring'] = {str(k): str(v) for k, v in ring.items()}
+    return _KEYRING_CACHE['ring']
+
+
+def active_key_version() -> str:
+    """The version new signatures will use (env HMAC_KEY_VERSION, else k1)."""
+    ring = _load_keyring()
+    version = os.getenv('HMAC_KEY_VERSION', DEFAULT_KEY_VERSION)
+    if version not in ring:
+        raise ValueError(f'HMAC_KEY_VERSION {version!r} is not present in the keyring.')
+    return version
+
+
+def compute_vote_hmac(
+    election_id: int,
+    candidate_id: int,
+    ballot_paper_id: str,
+    polling_station_id: int | None = None,
+    key_version: str | None = None,
+) -> tuple[str, str]:
+    """Sign the persisted ballot attributes; returns ``(signature, key_version)``."""
+    version = key_version or active_key_version()
+    key = _load_keyring()[version]
+    msg = f'{SCHEME_VERSION}:{election_id}:{candidate_id}:{polling_station_id or ""}:{ballot_paper_id}'
+    sig = hmac.new(key.encode('utf-8'), msg.encode('utf-8'), hashlib.sha256).hexdigest()
+    return sig, version
 
 
 def verify_vote_hmac(
-    voter_id: int | str, candidate_id: int, election_id: int, ballot_paper_id: str, received_hmac: str
+    election_id: int,
+    candidate_id: int,
+    ballot_paper_id: str,
+    received_hmac: str,
+    key_version: str = DEFAULT_KEY_VERSION,
+    polling_station_id: int | None = None,
 ) -> bool:
-    """Recompute the signature for a stored vote and compare in constant time."""
-    expected = compute_vote_hmac(voter_id, candidate_id, election_id, ballot_paper_id)
+    """Recompute the signature under the row's recorded key version."""
+    try:
+        key = _load_keyring()[key_version]
+    except KeyError:
+        return False  # unknown historical version: cannot verify, treat as failure
+    msg = f'{SCHEME_VERSION}:{election_id}:{candidate_id}:{polling_station_id or ""}:{ballot_paper_id}'
+    expected = hmac.new(key.encode('utf-8'), msg.encode('utf-8'), hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, received_hmac)
 
 
 def audit_votes_integrity(limit: int = 100000) -> dict:
-    """Scan recorded votes and report rows whose signature no longer matches.
+    """Scan every stored ballot and report rows whose signature no longer matches.
 
-    Returns a dict::
-
-        {'checked': int, 'valid': int, 'tampered': [{'ballot_paper_id', ...}], 'error': str|None}
-
-    A mismatch proves the row's voter/candidate/election/ballot fields were edited
-    after signing (or the signature itself was rewritten). It cannot prove who made
-    the change, only that the record is no longer trustworthy as evidence.
+    Returns ``{'checked': int, 'valid': int, 'tampered': [paper ids], 'error': str|None}``.
+    Because ballots carry no voter identity, tampering reports are anonymous by
+    design: they identify suspect paper IDs, never voters.
     """
     from database import DatabaseManager
 
@@ -71,19 +104,17 @@ def audit_votes_integrity(limit: int = 100000) -> dict:
     try:
         with DatabaseManager() as db:
             db.execute_query(
-                'SELECT voter_id, candidate_id, election_id, ballot_paper_id, hmac_hash '
-                'FROM votes ORDER BY id DESC LIMIT %s',
+                'SELECT candidate_id, election_id, polling_station_id, ballot_paper_id, hmac_hash, '
+                'key_version FROM votes ORDER BY id DESC LIMIT %s',
                 (limit,),
             )
-            for voter_id, candidate_id, election_id, ballot_paper_id, hmac_hash in db.fetch_all():
+            for candidate_id, election_id, station_id, paper_id, sig, version in db.fetch_all():
                 checked += 1
-                if ballot_paper_id and verify_vote_hmac(
-                    voter_id, candidate_id, election_id, ballot_paper_id, hmac_hash
-                ):
+                if paper_id and verify_vote_hmac(election_id, candidate_id, paper_id, sig, version or 'k1', station_id):
                     valid += 1
                 else:
-                    tampered.append({'ballot_paper_id': ballot_paper_id, 'voter_id': voter_id})
-    except Exception as exc:  # noqa: BLE001 - integrity report must degrade gracefully
+                    tampered.append({'ballot_paper_id': paper_id})
+    except Exception as exc:  # noqa: BLE001 - integrity report degrades gracefully
         return {'checked': checked, 'valid': valid, 'tampered': tampered, 'error': str(exc)}
     return {'checked': checked, 'valid': valid, 'tampered': tampered, 'error': None}
 

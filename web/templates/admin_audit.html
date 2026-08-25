@@ -3,8 +3,31 @@
 {% block content %}
 <section>
   <h1>Audit Trail</h1>
-  <p class="lead">Append-only record of actions (last 200 entries).</p>
+  <p class="lead">Append-only, hash-chained record of actions (last 200 entries).</p>
   <p><a href="/admin">&larr; Back to dashboard</a></p>
+
+  {% if chain %}
+    <div class="stats">
+      <div class="stat">
+        <span class="stat-num">{{ 'OK' if chain.ok else 'BROKEN' }}</span>
+        <span>Hash chain</span>
+      </div>
+      <div class="stat"><span class="stat-num">{{ chain.checked }}</span><span>Entries verified</span></div>
+    </div>
+    {% if not chain.ok %}<p class="runoff">Chain verification failed: {{ chain.error }}</p>{% endif %}
+  {% endif %}
+
+  {% if integrity %}
+    <div class="stats">
+      <div class="stat">
+        <span class="stat-num">{{ integrity.valid }}/{{ integrity.checked }}</span>
+        <span>Ballot signatures valid (last {{ 5000 }})</span>
+      </div>
+    </div>
+    {% if integrity.error %}<p class="muted">Integrity scan error: {{ integrity.error }}</p>{% endif %}
+    {% if integrity.tampered %}<p class="runoff">{{ integrity.tampered | length }} ballot(s) failed signature verification.</p>{% endif %}
+  {% endif %}
+
   <table>
     <thead><tr><th>ID</th><th>Action</th><th>Table</th><th>Record</th><th>Actor</th><th>Details</th><th>Timestamp</th></tr></thead>
     <tbody>
@@ -16,7 +39,7 @@
           <td>{{ row[3] or '—' }}</td>
           <td>{{ row[4] or '—' }}</td>
           <td>{{ row[5] or '' }}</td>
-          <td>{{ row[6] }}</td>
+          <td>{{ row[8] }}</td>
         </tr>
       {% endfor %}
     </tbody>

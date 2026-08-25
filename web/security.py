@@ -5,7 +5,7 @@ import secrets
 
 from fastapi import Form, HTTPException, Request
 
-from rate_limiter import RateLimiter
+from rate_limiter import DatabaseRateLimiter
 
 # --- Session secret -------------------------------------------------------------
 
@@ -24,8 +24,8 @@ def get_session_secret() -> str:
 
 # --- Rate limiters --------------------------------------------------------------
 
-admin_login_limiter: RateLimiter = RateLimiter(max_attempts=5, window_seconds=300)
-voter_login_limiter: RateLimiter = RateLimiter(max_attempts=5, window_seconds=300)
+admin_login_limiter = DatabaseRateLimiter(max_attempts=5, window_seconds=300)
+voter_login_limiter = DatabaseRateLimiter(max_attempts=5, window_seconds=300)
 
 
 def rate_limit_admin_login(request: Request, username: str = Form('')) -> None:

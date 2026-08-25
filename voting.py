@@ -17,7 +17,7 @@ from election import require_phase
 from hmac_utils import compute_vote_hmac, generate_ballot_paper_id
 from rate_limiter import voter_auth_limiter
 
-BALLOT_SLOTS: dict[str, str] = {'mp': 'mp_vote', 'president': 'president_vote'}
+BALLOT_SLOTS: dict[str, str] = {'mp': 'mp_voted', 'president': 'president_voted'}
 
 
 def verify_password(stored_password: str | bytes, provided_password: str) -> bool:
@@ -26,29 +26,39 @@ def verify_password(stored_password: str | bytes, provided_password: str) -> boo
     return bcrypt.checkpw(provided_password.encode('utf-8'), stored_password)
 
 
-def claim_ballot_slot(db: DatabaseManager, voter_id: str, position: str, candidate_id: int) -> bool:
+def claim_ballot_slot(db: DatabaseManager, voter_id: str, position: str) -> bool:
     """Atomically reserve the voter's ballot slot for ``position``.
 
-    Returns True when this call won the reservation; False means the slot was
-    already used, so the vote must be rejected. Must run inside the transaction
-    that also inserts the signed vote row.
+    The roll records only that a slot is used, never which candidate received
+    it; secrecy lives here. The conditional UPDATE is atomic under InnoDB row
+    locking, so concurrent submissions cannot both win. Must run inside the
+    transaction that also inserts the signed ballot row.
     """
     column = BALLOT_SLOTS[position]
     db.execute_query(
-        f'UPDATE voterinfo SET {column} = %s WHERE voter_id = %s AND {column} IS NULL',
-        (candidate_id, voter_id),
+        f'UPDATE voterinfo SET {column} = 1 WHERE voter_id = %s AND {column} = 0',
+        (voter_id,),
     )
     return db.cursor.rowcount == 1
 
 
 def record_vote(db: DatabaseManager, voter_id: str, candidate_id: int, election_id: int) -> str:
-    """Insert the HMAC-signed vote row and return its public ballot paper ID."""
+    """Sign and insert one anonymous ballot; returns its public paper ID.
+
+    The polling station is copied from the roll into the ballot because station
+    level tallies feed collation, but the ballot itself stores nothing that
+    identifies the voter.
+    """
+    db.execute_query('SELECT polling_station_id FROM voterinfo WHERE voter_id = %s', (voter_id,))
+    row = db.fetch_one()
+    station_id = row[0] if row else None
+
     ballot_id = generate_ballot_paper_id()
-    hmac_hash = compute_vote_hmac(voter_id, candidate_id, election_id, ballot_id)
+    hmac_hash, key_version = compute_vote_hmac(election_id, candidate_id, ballot_id, station_id)
     db.execute_query(
-        'INSERT INTO votes(voter_id, candidate_id, election_id, polling_station_id, hmac_hash, ballot_paper_id) '
-        'VALUES (%s, %s, %s, (SELECT polling_station_id FROM voterinfo WHERE voter_id = %s), %s, %s)',
-        (voter_id, candidate_id, election_id, voter_id, hmac_hash, ballot_id),
+        'INSERT INTO votes(candidate_id, election_id, polling_station_id, hmac_hash, ballot_paper_id, key_version) '
+        'VALUES (%s, %s, %s, %s, %s, %s)',
+        (candidate_id, election_id, station_id, hmac_hash, ballot_id, key_version),
     )
     return ballot_id
 
@@ -59,13 +69,13 @@ def maybe_mark_voting_complete(db: DatabaseManager, voter_id: str) -> None:
     A voter who has cast both ballots, or whose remaining slot has no election
     currently open, will not be prompted again on their next visit.
     """
-    db.execute_query('SELECT mp_vote, president_vote FROM voterinfo WHERE voter_id = %s', (voter_id,))
+    db.execute_query('SELECT mp_voted, president_voted FROM voterinfo WHERE voter_id = %s', (voter_id,))
     row = db.fetch_one()
     if not row:
         return
-    mp_vote, president_vote = row
-    mp_pending = mp_vote is None and bc.get_mp_election_id() is not None
-    pres_pending = president_vote is None and bc.get_presidential_election_id() is not None
+    mp_voted, president_voted = row
+    mp_pending = not mp_voted and bc.get_mp_election_id() is not None
+    pres_pending = not president_voted and bc.get_presidential_election_id() is not None
     if not mp_pending and not pres_pending:
         db.execute_query('UPDATE voterinfo SET voted = 1 WHERE voter_id = %s', (voter_id,))
 
@@ -130,7 +140,7 @@ def vote_mp() -> None:
                 return
 
             candidate_id = int(voter_choice)
-            if not claim_ballot_slot(db, voters_id, 'mp', candidate_id):
+            if not claim_ballot_slot(db, voters_id, 'mp'):
                 print('Your MP ballot was already recorded.')
                 return
             ballot_id = record_vote(db, voters_id, candidate_id, mp_election_id)
@@ -166,7 +176,7 @@ def vote_president(voters_id: str) -> None:
         candidate_id = int(voter_choice)
 
         with DatabaseManager() as db:
-            if not claim_ballot_slot(db, voters_id, 'president', candidate_id):
+            if not claim_ballot_slot(db, voters_id, 'president'):
                 print('Your presidential ballot was already recorded.')
                 return
             ballot_id = record_vote(db, voters_id, candidate_id, pres_election_id)

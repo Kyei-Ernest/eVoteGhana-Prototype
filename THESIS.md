@@ -486,4 +486,19 @@ The deeper conclusion is methodological. Election engineering is not distinguish
 9. OWASP Application Security Verification Standard, sections on authentication, session management, and access control.
 10. Provos, N. and Mazieres, D., A Future Adaptable Password Scheme (bcrypt), USENIX Annual Technical Conference, 1999.
 
+## 18. Appendix: The Production Milestone
+
+A later pass converted the study's findings into production shaped engineering while preserving the educational mission. Each upgrade answered a question this thesis had left open.
+
+| Open question from earlier chapters | Answer implemented |
+|-------------------------------------|--------------------|
+| Chapter 8 flagged that storage could see how each voter voted | Ballots became anonymous: votes carry no voter identity and the roll stores boolean used flags filled atomically, so secrecy no longer depends on discretion |
+| Chapter 8 noted key custody lets an attacker re sign rows | Keys became a versioned ring with the version recorded per row; rotation is now routine rather than catastrophic |
+| Chapter 12 relied on append only triggers alone | A hash chained audit adds cryptographic tamper evidence; the verifier pinpoints the first broken entry |
+| Chapter 13 called out per worker rate limiting | Attempt buckets moved into MySQL under row locks, shared by every worker, failing open with logged warnings to protect availability |
+| Chapter 14 asked what a sensible intermediate step looks like | The chain verifier plus integrity audit give operators external checkable evidence without voter facing crypto complexity |
+| Operational maturity | A runbook, a readiness checklist, pooling, health gated deploys, and enforced admin TOTP complete the picture |
+
+The deepest lesson sits in the secrecy migration: engineering can destroy a privacy violation retroactively, but only if the data model never needed the linkage in the first place. Systems designed for verification through identity linkage carry obligations that no later patch fully removes. Design for what must be provable, not for what is convenient to store.
+
 *Prepared as part of the eVoteGhana prototype study, August 2026.*
